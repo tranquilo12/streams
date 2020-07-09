@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "streams"
+version = "0.1.0"
+description = "A stream of data from anywhere, to anywhere"
+authors = ["Tranquilo12 <shriram.sunder121091@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.6"
+psycopg2-binary = "^2.8.5"
+polygon-api-client = "^0.1.6"
+numpy = "^1.19.0"
+bokeh = "^2.1.1"
+prefect = "^0.12.3"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
