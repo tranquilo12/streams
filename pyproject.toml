@@ -5,12 +5,15 @@ description = "A stream of data from anywhere, to anywhere"
 authors = ["Tranquilo12 <shriram.sunder121091@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.6"
+python = "^3.6.1"
 psycopg2-binary = "^2.8.5"
 polygon-api-client = "^0.1.6"
-numpy = "^1.19.0"
 bokeh = "^2.1.1"
 prefect = "^0.12.3"
+numpy = "^1.19.0"
+pandas = "^1.0.5"
+jupyter = "^1.0.0"
+tqdm = "^4.47.0"
 
 [tool.poetry.dev-dependencies]
 
