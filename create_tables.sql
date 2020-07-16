@@ -65,3 +65,28 @@ alter table polygon_stocks_agg
 
 create unique index polygon_stocks_agg_uindex
     on polygon_stocks_agg (event_type, symbol_ticker, start_timestamp, end_timestamp);
+
+create table polygon_stocks_bbo_quotes
+(
+    sip_timestamp      timestamp,
+    exchange_timestamp timestamp,
+    sequence_number    bigint,
+    conditions         integer[],
+    tape               integer,
+
+    bid_price          double precision,
+    bid_size           double precision,
+    bid_exchange_id    bigint,
+
+    ask_price          double precision,
+    ask_size           double precision,
+    ask_exchange_id    bigint,
+
+    indicators         integer[]
+);
+
+alter table polygon_stocks_bbo_quotes
+    owner to postgres;
+
+create unique index polygon_stocks_bbo_quotes_ticker_sip_timestamp_exchange_timesta
+    on polygon_stocks_bbo_quotes (sip_timestamp, exchange_timestamp, sequence_number);

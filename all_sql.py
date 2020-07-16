@@ -13,12 +13,14 @@ insert_into_polygon_agg = f"""INSERT INTO polygon_stocks_agg({polygon_agg_cols})
                               VALUES (%(ev)s, %(sym)s, %(v)s, %(av)s, %(op)s, %(vw)s, %(o)s, %(c)s, %(h)s, %(l)s, %(a)s, %(z)s, %(n)s, %(s)s, %(e)s) 
                               ON CONFLICT (event_type, symbol_ticker, start_timestamp, end_timestamp) DO NOTHING """
 
-polygon_stocks_bbo_quotes_cols = """ticker, sip_timestamp, exchange_timestamp, trf_timestamp, sequence_number, conditions, indicators, bid_price, bid_exchange_id, bid_size, ask_price, ask_exchange_id, ask_size, tape"""
+polygon_stocks_bbo_quotes_cols = """sip_timestamp, exchange_timestamp, sequence_number, conditions, tape, bid_price, bid_size, bid_exchange_id, ask_price, ask_size, ask_exchange_id, indicators"""
 insert_into_polygon_stocks_bbo = f"""INSERT INTO polygon_stocks_bbo_quotes({polygon_stocks_bbo_quotes_cols})
-                                     VALUES ((%(timestamp)s, %(sip_timestamp)s, %(exchange_timestmap)s, %(trf_timestamp)s, %(sequence_number)s, %(conditions)s, %(indicators)s, %(bid_price)s, %(bid_exchange_id)s, %(bid_size)s, %(ask_price)s, %(ask_exchange_id)s, %(ask_size)s, %(tape)s)
-                                     ON CONFLICT (ticker, sip_timestamp, exchange_timestamp, trf_timestamp, sequence_number) DO NOTHING """
+                                     VALUES (%(sip_timestamp)s, %(exchange_timestamp)s, %(sequence_number)s, %(conditions)s, %(tape)s, %(bid_price)s, %(bid_size)s, %(bid_exchange_id)s, %(ask_price)s, %(ask_size)s, %(ask_exchange_id)s, %(indicators)s)
+                                     ON CONFLICT (sip_timestamp, exchange_timestamp, sequence_number) DO NOTHING """
 
-polygon_stocks_agg_candles = """ticker, volume, open, close, high, low, timestamp, n_items"""
+polygon_stocks_agg_candles = (
+    """ticker, volume, open, close, high, low, timestamp, n_items"""
+)
 insert_into_polygon_stocks_agg_candles = f"""INSERT INTO polygon_stocks_agg_candles({polygon_stocks_agg_candles})
                                              VALUES (%(ticker)s, %(volume)s, %(open)s, %(close)s, %(high)s, %(low)s, %(timestamp)s, %(n_items)s)
                                              ON CONFLICT (ticker, volume, timestamp) DO NOTHING """
