@@ -5,6 +5,7 @@ import datetime
 from polygon import WebSocketClient, RESTClient, STOCKS_CLUSTER
 from configparser import ConfigParser
 import psycopg2
+from psycopg2.extras import execute_values
 import ast
 import pandas as pd
 import numpy as np
@@ -234,43 +235,50 @@ class Streams:
             ],
         )
 
-        df_.loc[:, "timestamp"] = df_["timestamp"].apply(
-            lambda x: datetime.datetime.fromtimestamp(x / 1e3)
-        )
+        df_.loc[~pd.isna(df_["timestamp"]), "timestamp"] = df_.loc[
+            ~pd.isna(df_["timestamp"]), "timestamp"
+        ].apply(lambda x: datetime.datetime.fromtimestamp(x / 1e3))
         return df_
 
     def rest_insert_aggregates(
-        self, df: pd.DataFrame, insert_query_template: str, bbo: bool = True
+        self, df: pd.DataFrame, insert_query_template: str, nbbo: bool = True
     ) -> None:
         """
         Insert into the polygon_stocks_bbo_quotes or candles
-        :param df: either bbo quotes or candles
-        :param insert_query_template: either for bbo or candles
+        :param nbbo: National Best Bid and Offer for those historic quotes
+        :type nbbo: bool, if True then this function will be used to insert nbbo quotes, else normal quotes for that exchange
+        :param df: either nbbo quotes or candles
+        :param insert_query_template: either for nbbo or candles
         :return: None
         """
-        if bbo:
-            # df.loc[:, "indicators"] = df["indicators"].replace({np.NaN: 9999})
+        df = df.replace({np.NaN: None})
+        columns = df.columns.tolist()
+        batch_size = len(df) // 10
+
+        if nbbo:
             df.loc[df["indicators"].isnull(), "indicators"] = df.loc[
                 df["indicators"].isnull(), "indicators"
             ].apply(lambda x: [])
+            query = "INSERT INTO polygon_stocks_bbo_quotes ({}) VALUES %s ON CONFLICT (sip_timestamp, exchange_timestamp, sequence_number) DO NOTHING".format(
+                ",".join(columns)
+            )
+        else:
+            query = "INSERT INTO polygon_stocks_agg ({}) VALUES %s ON CONFLICT (event_type, symbol_ticker, start_timestamp, end_timestamp) DO NOTHING".format(
+                ",".join(columns)
+            )
 
-        # to_insert = [tuple(row) for row in df.itertuples(index=False)]
-        batch_size = len(df) // 10
-        batched = [
-            batch for batch in self.batch(df.to_dict(orient="records"), n=batch_size)
-        ]
+        values = [[val for val in d.values()] for d in df.to_dict(orient="records")]
+        batched = [batch for batch in self.batch(values, n=batch_size)]
 
         with self.conn.cursor() as cur:
-            for row in tqdm(
-                df.to_dict(orient="records"), desc="Inserting each aggregate query... "
-            ):
-                insert_q = cur.mogrify(insert_query_template, row)
+            for batch in tqdm(batched, desc="Inserting each aggregate query..."):
                 try:
-                    cur.execute(insert_q)
+                    execute_values(cur, query, batch)
+                    self.conn.commit()
                 except psycopg2.errors.InFailedSqlTransaction as e:
                     self.conn.rollback()
-                    cur.execute(insert_q)
-                self.conn.commit()
+                    execute_values(cur, query, batch)
+                    self.conn.commit()
 
 
 if __name__ == "__main__":
@@ -285,11 +293,16 @@ if __name__ == "__main__":
 
     for ticker in tqdm(tkr, desc="For each ticker..."):
         print(f"Ticker: {ticker}...")
-        bbo_df = stream.rest_historic_n_bbo_quotes(
-            ticker=ticker, start_date=s_date, end_date=e_date
+        # bbo_df = stream.rest_historic_n_bbo_quotes(
+        #     ticker=ticker, start_date=s_date, end_date=e_date
+        # )
+
+        df = stream.rest_historic_aggregates(
+            ticker=ticker, start_date=s_date, end_date=e_date, timespan="minute"
         )
+
         stream.rest_insert_aggregates(
-            df=bbo_df, insert_query_template=insert_into_polygon_stocks_bbo, bbo=True
+            df=df, insert_query_template=insert_into_polygon_stocks_bbo, nbbo=False
         )
 
     # stream.establish_websocket_client()
