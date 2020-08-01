@@ -1,13 +1,12 @@
-import requests
-from tqdm.auto import tqdm
-import datetime
-from polygon import WebSocketClient, RESTClient, STOCKS_CLUSTER
-from configparser import ConfigParser
-import psycopg2
-from psycopg2.extras import execute_values
-import ast
 import pandas as pd
 import numpy as np
+import configparser
+import requests
+import datetime
+import psycopg2
+import ast
+from tqdm.auto import tqdm
+from polygon import WebSocketClient, RESTClient, STOCKS_CLUSTER
 from all_sql import (
     insert_into_polygon_trades,
     insert_into_polygon_quotes,
@@ -18,7 +17,7 @@ from all_sql import (
 
 class Streams:
     def __init__(self):
-        config = ConfigParser()
+        config = configparser.ConfigParser()
         config.read("config.ini")
         self.conn_params = {
             "host": config["TEST"]["host"],
@@ -275,12 +274,12 @@ class Streams:
         with self.conn.cursor() as cur:
             for batch in tqdm(batched, desc="Inserting each aggregate query..."):
                 try:
-                    execute_values(cur, query, batch)
+                    psycopg2.extras.execute_values(cur, query, batch)
                     self.conn.commit()
                 except psycopg2.errors.InFailedSqlTransaction as e:
                     print(f"InFailedSQLTransaction: {e}")
                     self.conn.rollback()
-                    execute_values(cur, query, batch)
+                    psycopg2.extras.execute_values(cur, query, batch)
                     self.conn.commit()
 
 
