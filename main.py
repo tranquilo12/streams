@@ -1,6 +1,5 @@
 import requests
 from tqdm.auto import tqdm
-import time
 import datetime
 from polygon import WebSocketClient, RESTClient, STOCKS_CLUSTER
 from configparser import ConfigParser
@@ -14,7 +13,6 @@ from all_sql import (
     insert_into_polygon_quotes,
     insert_into_polygon_agg,
     insert_into_polygon_stocks_bbo,
-    insert_into_polygon_stocks_agg_candles,
 )
 
 
@@ -45,7 +43,7 @@ class Streams:
         """
         l = len(iterable)
         for idx in range(0, l, n):
-            yield iterable[idx : min(idx + n, l)]
+            yield iterable[idx: min(idx + n, l)]
 
     def establish_rds_connection(self) -> bool:
         """
@@ -111,6 +109,7 @@ class Streams:
                 try:
                     cur.execute(insert_query)
                 except psycopg2.errors.InFailedSqlTransaction as e:
+                    print(f"Error: {e}")
                     self.conn.rollback()
                     cur.execute(insert_query)
 
@@ -124,15 +123,17 @@ class Streams:
         try:
             self.rest_client = RESTClient(self.api_key)
         except (ValueError, Exception) as e:
-            print("Rest Client not established")
+            print(f"Rest Client not established: {e}")
 
     @staticmethod
     def datetime_converter(x: int):
         try:
             res = datetime.datetime.fromtimestamp(x / 1e3)
         except OSError as e:
+            print(f"OS-Error: {e}")
             res = datetime.datetime.fromtimestamp(x / 1e9)
         except ValueError as e:
+            print(f"Value-Error: {e}")
             res = np.NaN
 
         return res
@@ -162,6 +163,7 @@ class Streams:
                 df_ = pd.DataFrame.from_records(res)
                 all_res.append(df_)
             except requests.HTTPError as e:
+                print(f"HTTP-Error: {e}")
                 pass
 
         res_df = pd.concat(all_res)
@@ -276,6 +278,7 @@ class Streams:
                     execute_values(cur, query, batch)
                     self.conn.commit()
                 except psycopg2.errors.InFailedSqlTransaction as e:
+                    print(f"InFailedSQLTransaction: {e}")
                     self.conn.rollback()
                     execute_values(cur, query, batch)
                     self.conn.commit()
@@ -291,18 +294,18 @@ if __name__ == "__main__":
     s_date = datetime.date.today() - datetime.timedelta(days=5)
     e_date = datetime.date.today()
 
-    for ticker in tqdm(tkr, desc="For each ticker..."):
-        print(f"Ticker: {ticker}...")
+    for t in tqdm(tkr, desc="For each ticker..."):
+        print(f"Ticker: {t}...")
         # bbo_df = stream.rest_historic_n_bbo_quotes(
         #     ticker=ticker, start_date=s_date, end_date=e_date
         # )
 
-        df = stream.rest_historic_aggregates(
-            ticker=ticker, start_date=s_date, end_date=e_date, timespan="minute"
+        data_df = stream.rest_historic_aggregates(
+            ticker=t, start_date=s_date, end_date=e_date, timespan="minute"
         )
 
         stream.rest_insert_aggregates(
-            df=df, insert_query_template=insert_into_polygon_stocks_bbo, nbbo=False
+            df=data_df, insert_query_template=insert_into_polygon_stocks_bbo, nbbo=False
         )
 
     # stream.establish_websocket_client()
