@@ -86,6 +86,16 @@ class Streams:
         except (ValueError, ConnectionRefusedError, ConnectionError):
             print("Websocket Client not established")
 
+    def establish_rest_client(self) -> None:
+        """
+        For the REST client polygon, with the API key
+        :return: None
+        """
+        try:
+            self.rest_client = RESTClient(self.api_key)
+        except (ValueError, Exception) as e:
+            print(f"Rest Client not established: {e}")
+
     def on_message(self, message: str) -> None:
         """
 
@@ -126,16 +136,6 @@ class Streams:
                     cur.execute(insert_query)
 
                 self.conn.commit()
-
-    def establish_rest_client(self) -> None:
-        """
-        For the REST client polygon, with the API key
-        :return: None
-        """
-        try:
-            self.rest_client = RESTClient(self.api_key)
-        except (ValueError, Exception) as e:
-            print(f"Rest Client not established: {e}")
 
     def rest_historic_n_bbo_quotes(
         self, ticker: str, start_date: datetime.date, end_date: datetime.date
