@@ -33,6 +33,19 @@ class Streams:
         self.rds_connected = self.establish_rds_connection()
 
     @staticmethod
+    def datetime_converter(x: int):
+        try:
+            res = datetime.datetime.fromtimestamp(x / 1e3)
+        except OSError as e:
+            print(f"OS-Error: {e}")
+            res = datetime.datetime.fromtimestamp(x / 1e9)
+        except ValueError as e:
+            print(f"Value-Error: {e}")
+            res = np.NaN
+
+        return res
+
+    @staticmethod
     def batch(iterable: list, n: int) -> list:
         """
         Take an iterable and give back batches
@@ -123,19 +136,6 @@ class Streams:
             self.rest_client = RESTClient(self.api_key)
         except (ValueError, Exception) as e:
             print(f"Rest Client not established: {e}")
-
-    @staticmethod
-    def datetime_converter(x: int):
-        try:
-            res = datetime.datetime.fromtimestamp(x / 1e3)
-        except OSError as e:
-            print(f"OS-Error: {e}")
-            res = datetime.datetime.fromtimestamp(x / 1e9)
-        except ValueError as e:
-            print(f"Value-Error: {e}")
-            res = np.NaN
-
-        return res
 
     def rest_historic_n_bbo_quotes(
         self, ticker: str, start_date: datetime.date, end_date: datetime.date
