@@ -7,6 +7,7 @@ import psycopg2
 import ast
 from tqdm.auto import tqdm
 from polygon import WebSocketClient, RESTClient, STOCKS_CLUSTER
+from connections import Connections
 from all_sql import (
     insert_into_polygon_trades,
     insert_into_polygon_quotes,
@@ -15,7 +16,7 @@ from all_sql import (
 )
 
 
-class Streams:
+class Streams(Connections):
     def __init__(self):
         config = configparser.ConfigParser()
         config.read("config.ini")
@@ -31,70 +32,6 @@ class Streams:
         self.websocket_client = None
         self.rest_client = None
         self.rds_connected = self.establish_rds_connection()
-
-    @staticmethod
-    def datetime_converter(x: int):
-        try:
-            res = datetime.datetime.fromtimestamp(x / 1e3)
-        except OSError as e:
-            print(f"OS-Error: {e}")
-            res = datetime.datetime.fromtimestamp(x / 1e9)
-        except ValueError as e:
-            print(f"Value-Error: {e}")
-            res = np.NaN
-
-        return res
-
-    @staticmethod
-    def batch(iterable: list, n: int) -> list:
-        """
-        Take an iterable and give back batches
-        :param iterable: a list
-        :param n: batch size
-        :return: a list
-        """
-        l = len(iterable)
-        for idx in range(0, l, n):
-            yield iterable[idx: min(idx + n, l)]
-
-    def establish_rds_connection(self) -> bool:
-        """
-        Make sure the rds connection is made to the test database
-        :return: None
-        """
-        connected = False
-        try:
-            self.conn = psycopg2.connect(**self.conn_params)
-            connected = True
-        except (
-            ValueError,
-            PermissionError,
-            psycopg2.OperationalError,
-        ):
-            print("No Connection Established.")
-        return connected
-
-    def establish_websocket_client(self) -> None:
-        """
-        For the websocket client polygon, with the API key
-        :return: None
-        """
-        try:
-            self.websocket_client = WebSocketClient(
-                STOCKS_CLUSTER, auth_key=self.api_key, process_message=self.on_message
-            )
-        except (ValueError, ConnectionRefusedError, ConnectionError):
-            print("Websocket Client not established")
-
-    def establish_rest_client(self) -> None:
-        """
-        For the REST client polygon, with the API key
-        :return: None
-        """
-        try:
-            self.rest_client = RESTClient(self.api_key)
-        except (ValueError, Exception) as e:
-            print(f"Rest Client not established: {e}")
 
     def on_message(self, message: str) -> None:
         """
