@@ -1,12 +1,11 @@
 import pandas as pd
 import numpy as np
-import configparser
 import requests
 import datetime
 import psycopg2
 import ast
 from tqdm.auto import tqdm
-from polygon import WebSocketClient, RESTClient, STOCKS_CLUSTER
+from polygon import WebSocketClient, AsyncRESTClient, STOCKS_CLUSTER
 from connections import Connections
 from all_sql import (
     insert_into_polygon_trades,
@@ -18,20 +17,7 @@ from all_sql import (
 
 class Streams(Connections):
     def __init__(self):
-        config = configparser.ConfigParser()
-        config.read("config.ini")
-        self.conn_params = {
-            "host": config["TEST"]["host"],
-            "password": config["TEST"]["password"],
-            "port": config["TEST"]["port"],
-            "user": config["TEST"]["user"],
-            "database": config["TEST"]["db"],
-        }
-        self.conn = None
-        self.api_key = config["POLYGON"]["key"]
-        self.websocket_client = None
-        self.rest_client = None
-        self.rds_connected = self.establish_rds_connection()
+        super().__init__()
 
     def on_message(self, message: str) -> None:
         """
@@ -87,6 +73,7 @@ class Streams(Connections):
         assert (
             self.rest_client is not None
         ), "Please make sure rest_client is established..."
+
         all_dates = [
             date.strftime("%Y-%m-%d")
             for date in pd.bdate_range(start=start_date, end=end_date)
@@ -148,11 +135,6 @@ class Streams(Connections):
         start_date = start_date.strftime("%Y-%m-%d")
         end_date = end_date.strftime("%Y-%m-%d")
 
-        if not self.rest_client:
-            pass
-        else:
-            self.establish_rest_client()
-
         df_ = pd.DataFrame.from_records(
             self.rest_client.stocks_equities_aggregates(
                 ticker=ticker,
@@ -176,6 +158,7 @@ class Streams(Connections):
         df_.loc[~pd.isna(df_["timestamp"]), "timestamp"] = df_.loc[
             ~pd.isna(df_["timestamp"]), "timestamp"
         ].apply(lambda x: datetime.datetime.fromtimestamp(x / 1e3))
+
         return df_
 
     def rest_insert_aggregates(
@@ -227,7 +210,7 @@ if __name__ == "__main__":
     tkr = ["AAPL", "MSFT", "NVDA", "AMD", "TSLA", "GOOG", "NFLX", "FB", "AMZN"]
     assert stream.rds_connected, "Streams is not connected to the database"
 
-    s_date = datetime.date.today() - datetime.timedelta(days=5)
+    s_date = datetime.date.today() - datetime.timedelta(days=1)
     e_date = datetime.date.today()
 
     for t in tqdm(tkr, desc="For each ticker..."):
@@ -240,9 +223,9 @@ if __name__ == "__main__":
             ticker=t, start_date=s_date, end_date=e_date, timespan="minute"
         )
 
-        stream.rest_insert_aggregates(
-            df=data_df, insert_query_template=insert_into_polygon_stocks_bbo, nbbo=False
-        )
+        # stream.rest_insert_aggregates(
+        #     df=data_df, insert_query_template=insert_into_polygon_stocks_bbo, nbbo=False
+        # )
 
     # stream.establish_websocket_client()
     # stream.websocket_client.run_async()

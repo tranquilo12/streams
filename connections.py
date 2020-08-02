@@ -1,6 +1,6 @@
 import configparser
 import psycopg2
-from polygon import WebSocketClient, RESTClient, STOCKS_CLUSTER
+from polygon import WebSocketClient, AsyncRESTClient, STOCKS_CLUSTER
 from logger import StreamsLogger
 
 
@@ -8,6 +8,7 @@ class Connections(StreamsLogger):
     def __init__(self):
 
         # read the damn file
+        super().__init__()
         config = configparser.ConfigParser()
         config.read("config.ini")
 
@@ -19,11 +20,14 @@ class Connections(StreamsLogger):
             "user": config["TEST"]["user"],
             "database": config["TEST"]["db"],
         }
-        self.conn = None
         self.api_key = config["POLYGON"]["key"]
+        self.rds_connected = None
+        self.conn = None
         self.websocket_client = None
         self.rest_client = None
-        self.rds_connected = self.establish_rds_connection()
+
+        # make sure all the conns are made
+        self.establish_all_connections()
 
     @staticmethod
     def datetime_converter(x: int):
@@ -50,7 +54,7 @@ class Connections(StreamsLogger):
         for idx in range(0, l, n):
             yield iterable[idx : min(idx + n, l)]
 
-    def establish_rds_connection(self) -> bool:
+    def establish_rds_connection(self) -> None:
         """
         Make sure the rds connection is made to the test database
         :return: None
@@ -58,7 +62,7 @@ class Connections(StreamsLogger):
         connected = False
         try:
             self.conn = psycopg2.connect(**self.conn_params)
-            connected = True
+            self.rds_connected = True
             self.logger.info(msg="RDS Connection established")
         except (
             ValueError,
@@ -66,7 +70,7 @@ class Connections(StreamsLogger):
             psycopg2.OperationalError,
         ):
             self.logger.error(msg=f"RDS Connection not established, with error: {e}")
-        return connected
+            self.rds_connected = False
 
     def establish_websocket_client(self) -> None:
         """
@@ -89,7 +93,7 @@ class Connections(StreamsLogger):
         :return: None
         """
         try:
-            self.rest_client = RESTClient(self.api_key)
+            self.rest_client = AsyncRESTClient(auth_key=self.api_key)
             self.logger.info(msg="Polygon REST connection established")
         except (ValueError, Exception) as e:
             self.logger.error(
@@ -98,9 +102,9 @@ class Connections(StreamsLogger):
 
     def establish_all_connections(self) -> None:
         """
-        Just call all the functions that
+        Just call all the functions that make up conns
         :return:
         """
         self.establish_rds_connection()
-        self.establish_websocket_client()
+        # self.establish_websocket_client()
         self.establish_rest_client()
