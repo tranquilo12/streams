@@ -3,6 +3,7 @@ import numpy as np
 import requests
 import datetime
 import psycopg2
+from psycopg2.extras import execute_values
 import ast
 import asyncio
 from tqdm.auto import tqdm
@@ -116,24 +117,25 @@ class RestStreams(Connections):
 
         df_ = df_.replace({np.NaN: None})
         columns = df_.columns.tolist()
-        batch_size = len(df_) // 10
 
-        query_template = "INSERT INTO polygon_stocks_agg ({}) VALUES %s ON CONFLICT (event_type, symbol_ticker, start_timestamp, end_timestamp) DO NOTHING".format(
+        batch_size = 1 if ((len(df_) // 10) == 0) else len(df_) // 10
+
+        query_template = "INSERT INTO polygon_stocks_agg_candles ({}) VALUES %s ON CONFLICT (ticker, volume, timestamp) DO NOTHING".format(
             ",".join(columns)
         )
 
-        values = [[val for val in d.values()] for d in df.to_dict(orient="records")]
+        values = [[val for val in d.values()] for d in df_.to_dict(orient="records")]
         batched = [batch for batch in self.batch(values, n=batch_size)]
 
         with self.conn.cursor() as cur:
             for batch in tqdm(batched, desc="Inserting each aggregate query..."):
                 try:
-                    psycopg2.extras.execute_values(cur, query_template, batch)
+                    execute_values(cur, query_template, batch)
                     self.conn.commit()
                 except psycopg2.errors.InFailedSqlTransaction as e:
                     print(f"InFailedSQLTransaction: {e}")
                     self.conn.rollback()
-                    psycopg2.extras.execute_values(cur, query_template, batch)
+                    execute_values(cur, query_template, batch)
                     self.conn.commit()
 
 
@@ -141,7 +143,7 @@ async def call_all_stocks_aggregates():
 
     stream = RestStreams()
     tkr = ["AAPL", "MSFT", "NVDA", "AMD", "TSLA", "GOOG", "NFLX", "FB", "AMZN"]
-    start_date = datetime.date.today() - datetime.timedelta(days=1)
+    start_date = datetime.date.today() - datetime.timedelta(days=10)
     end_date = datetime.date.today()
 
     await asyncio.gather(
@@ -178,6 +180,8 @@ async def call_all_stocks_aggregates():
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(call_all_stocks_aggregates())
+    loop.close()
+
     # loop.run_forever(stream.call_all_stocks_aggregates())
 
     # assert stream.rds_connected, "Streams is not connected to the database"
