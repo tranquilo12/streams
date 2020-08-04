@@ -15,19 +15,22 @@ class AsyncRESTClient:
         self.auth_key = auth_key
         self.url = "https://" + self.DEFAULT_HOST
 
-        self._cookies = {"apiKey": self.auth_key}
-        self._session = aiohttp.ClientSession(cookies=self._cookies)
+        self._auth = {"apiKey": self.auth_key}
+        # self._session = aiohttp.ClientSession()
         # self._session.params["apiKey"] = self.auth_key
 
     async def _handle_response(
         self, response_type: str, endpoint: str, params: Dict[str, str]
     ) -> Type[models.AnyDefinition]:
-        async with self._session.get(endpoint, params=params) as resp:
-            if resp.status == 200:
-                resp_json = await resp.json()
-                return unmarshal.unmarshal_json(response_type, resp_json)
-            else:
-                resp.raise_for_status()
+        params["apiKey"] = self.auth_key
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(endpoint, params=params) as resp:
+                if resp.status == 200:
+                    resp_json = await resp.json()
+                    return unmarshal.unmarshal_json(response_type, resp_json)
+                else:
+                    resp.raise_for_status()
 
     async def reference_tickers(
         self, **query_params
