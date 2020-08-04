@@ -36,16 +36,6 @@ class RestStreams(Connections):
             "S": "ask_size",
             "z": "tape",
         }
-        self.historic_agg_columns: list = [
-            "ticker",
-            "volume",
-            "open",
-            "close",
-            "high",
-            "low",
-            "timestamp",
-            "n_items",
-        ]
 
     async def rest_historic_nbbo_quotes(
         self, ticker: str, start_date: datetime.date, end_date: datetime.date
@@ -102,84 +92,77 @@ class RestStreams(Connections):
 
         assert self.rest_client is not None, "Why is rest_client None??"
 
-        records = await self.rest_client.stocks_equities_aggregates(
-            ticker=ticker,
-            multiplier=multiplier,
-            timespan=timespan,
-            from_=from_.strftime("%Y-%m-%d"),
-            to=to.strftime("%Y-%m-%d"),
-        )
+        while True:
+            records = await self.rest_client.stocks_equities_aggregates(
+                ticker=ticker,
+                multiplier=multiplier,
+                timespan=timespan,
+                from_=from_.strftime("%Y-%m-%d"),
+                to=to.strftime("%Y-%m-%d"),
+            )
 
-        df_ = pd.DataFrame.from_records(
-            records.results, columns=self.historic_agg_columns
-        )
-        df_.loc[:, "timestamp"] = pd.to_datetime(df_["timestamp"], unit="ms")
+            df_ = pd.DataFrame.from_records(records.results)
+            df_.columns = [
+                "volume",
+                "vwap",
+                "open",
+                "close",
+                "high",
+                "low",
+                "timestamp",
+            ]
+            df_["ticker"] = ticker
+            df_["timespan"] = timespan
+            df_["multiplier"] = multiplier
+            df_.loc[:, "timestamp"] = pd.to_datetime(df_["timestamp"], unit="ms")
+            df_ = df_[
+                [
+                    "ticker",
+                    "timespan",
+                    "multiplier",
+                    "volume",
+                    "vwap",
+                    "open",
+                    "close",
+                    "high",
+                    "low",
+                    "timestamp",
+                ]
+            ]
+            df_ = df_.replace({np.NaN: None})
 
-        df_ = df_.replace({np.NaN: None})
-        columns = df_.columns.tolist()
+            connection = await self.establish_rds_connection()
+            for d in df_.to_records(index=False):
+                query_template = f"INSERT INTO polygon_stocks_agg_candles VALUES {d} ON CONFLICT (ticker, timespan, multiplier, volume, timestamp) DO NOTHING "
+                await connection.execute(query_template)
 
-        batch_size = 1 if ((len(df_) // 10) == 0) else len(df_) // 10
-
-        query_template = "INSERT INTO polygon_stocks_agg_candles ({}) VALUES %s ON CONFLICT (ticker, volume, timestamp) DO NOTHING".format(
-            ",".join(columns)
-        )
-
-        values = [[val for val in d.values()] for d in df_.to_dict(orient="records")]
-        batched = [batch for batch in self.batch(values, n=batch_size)]
-
-        with self.conn.cursor() as cur:
-            for batch in tqdm(batched, desc="Inserting each aggregate query..."):
-                try:
-                    execute_values(cur, query_template, batch)
-                    self.conn.commit()
-                except psycopg2.errors.InFailedSqlTransaction as e:
-                    print(f"InFailedSQLTransaction: {e}")
-                    self.conn.rollback()
-                    execute_values(cur, query_template, batch)
-                    self.conn.commit()
+            await connection.close()
+            await asyncio.sleep(delay=1.5)
 
 
 async def call_all_stocks_aggregates():
 
     stream = RestStreams()
     tkr = ["AAPL", "MSFT", "NVDA", "AMD", "TSLA", "GOOG", "NFLX", "FB", "AMZN"]
-    start_date = datetime.date.today() - datetime.timedelta(days=10)
+    ts = "minute"
+
+    start_date = datetime.date.today() - datetime.timedelta(days=1)
     end_date = datetime.date.today()
 
-    await asyncio.gather(
+    all_minute_gatherers = [
         stream.request_and_insert_stocks_equities_aggregates(
-            ticker=tkr[0], multiplier=1, timespan="day", from_=start_date, to=end_date,
-        ),
-        stream.request_and_insert_stocks_equities_aggregates(
-            ticker=tkr[1], multiplier=1, timespan="day", from_=start_date, to=end_date,
-        ),
-        stream.request_and_insert_stocks_equities_aggregates(
-            ticker=tkr[2], multiplier=1, timespan="day", from_=start_date, to=end_date,
-        ),
-        stream.request_and_insert_stocks_equities_aggregates(
-            ticker=tkr[3], multiplier=1, timespan="day", from_=start_date, to=end_date,
-        ),
-        stream.request_and_insert_stocks_equities_aggregates(
-            ticker=tkr[4], multiplier=1, timespan="day", from_=start_date, to=end_date,
-        ),
-        stream.request_and_insert_stocks_equities_aggregates(
-            ticker=tkr[5], multiplier=1, timespan="day", from_=start_date, to=end_date,
-        ),
-        stream.request_and_insert_stocks_equities_aggregates(
-            ticker=tkr[6], multiplier=1, timespan="day", from_=start_date, to=end_date,
-        ),
-        stream.request_and_insert_stocks_equities_aggregates(
-            ticker=tkr[7], multiplier=1, timespan="day", from_=start_date, to=end_date,
-        ),
-        stream.request_and_insert_stocks_equities_aggregates(
-            ticker=tkr[8], multiplier=1, timespan="day", from_=start_date, to=end_date,
-        ),
-    )
+            ticker=t, multiplier=1, timespan=ts, from_=start_date, to=end_date
+        )
+        for t in tkr
+    ]
+
+    await asyncio.gather(*all_minute_gatherers)
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(call_all_stocks_aggregates())
+    loop.create_task(coro=call_all_stocks_aggregates())
+    loop.run_forever()
     loop.close()
 
     # loop.run_forever(stream.call_all_stocks_aggregates())
