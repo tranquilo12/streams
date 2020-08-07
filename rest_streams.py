@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 import ast
 import asyncio
+import aiohttp
 from tqdm.auto import tqdm
 from polygon import WebSocketClient, AsyncRESTClient, STOCKS_CLUSTER
 from connections import Connections
@@ -93,13 +94,23 @@ class RestStreams(Connections):
         assert self.rest_client is not None, "Why is rest_client None??"
 
         while True:
-            records = await self.rest_client.stocks_equities_aggregates(
-                ticker=ticker,
-                multiplier=multiplier,
-                timespan=timespan,
-                from_=from_.strftime("%Y-%m-%d"),
-                to=to.strftime("%Y-%m-%d"),
-            )
+            try:
+                records = await self.rest_client.stocks_equities_aggregates(
+                    ticker=ticker,
+                    multiplier=multiplier,
+                    timespan=timespan,
+                    from_=from_.strftime("%Y-%m-%d"),
+                    to=to.strftime("%Y-%m-%d"),
+                )
+            except aiohttp.ClientResponseError as e1:
+                self.rest_client = self.establish_rest_client()
+                records = await self.rest_client.stocks_equities_aggregates(
+                    ticker=ticker,
+                    multiplier=multiplier,
+                    timespan=timespan,
+                    from_=from_.strftime("%Y-%m-%d"),
+                    to=to.strftime("%Y-%m-%d"),
+                )
 
             df_ = pd.DataFrame.from_records(records.results)
             df_.columns = [
