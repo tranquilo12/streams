@@ -27,7 +27,7 @@ class Streams(Connections):
         """
         message = ast.literal_eval(message)
 
-        with self.conn.cursor() as cur:
+        with self.rds_conn.cursor() as cur:
             for msg in message:
 
                 # for all trades
@@ -55,10 +55,10 @@ class Streams(Connections):
                     cur.execute(insert_query)
                 except psycopg2.errors.InFailedSqlTransaction as e:
                     print(f"Error: {e}")
-                    self.conn.rollback()
+                    self.rds_conn.rollback()
                     cur.execute(insert_query)
 
-                self.conn.commit()
+                self.rds_conn.commit()
 
     def rest_historic_n_bbo_quotes(
         self, ticker: str, start_date: datetime.date, end_date: datetime.date
@@ -191,16 +191,16 @@ class Streams(Connections):
         values = [[val for val in d.values()] for d in df.to_dict(orient="records")]
         batched = [batch for batch in self.batch(values, n=batch_size)]
 
-        with self.conn.cursor() as cur:
+        with self.rds_conn.cursor() as cur:
             for batch in tqdm(batched, desc="Inserting each aggregate query..."):
                 try:
                     psycopg2.extras.execute_values(cur, query, batch)
-                    self.conn.commit()
+                    self.rds_conn.commit()
                 except psycopg2.errors.InFailedSqlTransaction as e:
                     print(f"InFailedSQLTransaction: {e}")
-                    self.conn.rollback()
+                    self.rds_conn.rollback()
                     psycopg2.extras.execute_values(cur, query, batch)
-                    self.conn.commit()
+                    self.rds_conn.commit()
 
 
 if __name__ == "__main__":

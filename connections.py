@@ -1,5 +1,6 @@
 import configparser
 import psycopg2
+from sqlalchemy import create_engine
 from polygon import WebSocketClient, AsyncRESTClient, STOCKS_CLUSTER
 from logger import StreamsLogger
 
@@ -21,8 +22,10 @@ class Connections(StreamsLogger):
             "database": config["TEST"]["db"],
         }
         self.api_key = config["POLYGON"]["key"]
+        self.rds_url = config["TEST"]["url"]
         self.rds_connected = None
-        self.conn = None
+        self.rds_conn = None
+        self.rds_engine = None
         self.websocket_client = None
         self.rest_client = None
 
@@ -61,7 +64,8 @@ class Connections(StreamsLogger):
         """
         connected = False
         try:
-            self.conn = psycopg2.connect(**self.conn_params)
+            self.rds_conn = psycopg2.connect(**self.conn_params)
+            self.rds_engine = create_engine(self.rds_url)
             self.rds_connected = True
             self.logger.info(msg="RDS Connection established")
         except (
