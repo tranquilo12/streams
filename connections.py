@@ -1,5 +1,7 @@
 import configparser
 import psycopg2
+# import asyncpg
+import aiopg
 from sqlalchemy import create_engine
 from polygon import WebSocketClient, AsyncRESTClient, STOCKS_CLUSTER
 from logger import StreamsLogger
@@ -17,13 +19,16 @@ class Connections(StreamsLogger):
         self.conn_params = {
             "host": config["TEST"]["host"],
             "password": config["TEST"]["password"],
-            "port": config["TEST"]["port"],
+            # "port": config["TEST"]["port"],
             "user": config["TEST"]["user"],
             "database": config["TEST"]["db"],
         }
+        self.dsn = f"dbname={self.conn_params['database']} user={self.conn_params['user']} password={self.conn_params['password']} host={self.conn_params['host']}"
         self.api_key = config["POLYGON"]["key"]
         self.rds_url = config["TEST"]["url"]
         self.rds_connected = None
+        self.async_rds_connected = None
+        self.async_rds_conn = None
         self.rds_conn = None
         self.rds_engine = None
         self.websocket_client = None
@@ -75,6 +80,26 @@ class Connections(StreamsLogger):
         ):
             self.logger.error(msg=f"RDS Connection not established, with error: {e}")
             self.rds_connected = False
+
+    async def establish_async_rds_connection(self) -> aiopg.connect:
+        """
+        Make sure the rds connection is made to the test database
+        :return: None
+        """
+        try:
+            async_rds_conn = await aiopg.connect(dsn=self.dsn)
+            self.logger.info(msg="ASYNC RDS Connection established")
+        except (
+            ValueError,
+            PermissionError,
+            psycopg2.OperationalError,
+        ):
+            async_rds_conn = None
+            self.logger.error(
+                msg=f"ASYNC RDS Connection not established, with error: {e}"
+            )
+
+        return async_rds_conn
 
     def establish_websocket_client(self) -> None:
         """

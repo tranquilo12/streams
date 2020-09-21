@@ -22,10 +22,10 @@ class AsyncRESTClient:
     async def _handle_response(
         self, response_type: str, endpoint: str, params: Dict[str, str]
     ) -> Type[models.AnyDefinition]:
-        params["apiKey"] = self.auth_key
+        # params["apiKey"] = self.auth_key
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(endpoint, params=params) as resp:
+            async with session.get(endpoint, params=self._auth) as resp:
                 if resp.status == 200:
                     resp_json = await resp.json()
                     return unmarshal.unmarshal_json(response_type, resp_json)

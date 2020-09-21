@@ -5,6 +5,7 @@ import datetime
 import psycopg2
 import ast
 import asyncio
+import aiopg
 import aiohttp
 from tqdm.auto import tqdm
 from polygon import WebSocketClient, AsyncRESTClient, STOCKS_CLUSTER
@@ -114,6 +115,7 @@ class RestStreams(Connections):
                 timespan=timespan,
                 from_=from_.strftime("%Y-%m-%d"),
                 to=to.strftime("%Y-%m-%d"),
+                params={},
             )
             df_ = pd.DataFrame.from_records(records.results)
             df_ = df_.rename(columns=self.historic_agg_columns)
@@ -130,34 +132,43 @@ class RestStreams(Connections):
                 ",".join(columns)
             )
 
-            values = [[val for val in d.values()] for d in df.to_dict(orient="records")]
+            values = [[val for val in d.values()] for d in df_.to_dict(orient="records")]
             batched = [batch for batch in self.batch(values, n=batch_size)]
+            conn = await self.establish_async_rds_connection()
 
-            with self.rds_conn.cursor() as cur:
-                for batch in tqdm(batched, desc="Inserting each aggregate query..."):
+            async with conn.cursor() as cur:
+                for batch in batched:
                     try:
-                        psycopg2.extras.execute_values(cur, query_template, batch)
-                        self.rds_conn.commit()
+                        await psycopg2.extras.execute_values(cur, query_template, batch)
                     except psycopg2.errors.InFailedSqlTransaction as e:
-                        print(f"InFailedSQLTransaction: {e}")
-                        self.rds_conn.rollback()
-                        psycopg2.extras.execute_values(cur, query_template, batch)
-                        self.rds_conn.commit()
+                        pass
         except aiohttp.client_exceptions.ClientResponseError as e:
-            print(f"Ticker: {ticker} not pulling")
+            print(f"Ticker : {ticker} not pulling down data")
+
+    #     with self.rds_conn.cursor() as cur:
+        #         for batch in tqdm(batched, desc="Inserting each aggregate query..."):
+        #             try:
+        #                 psycopg2.extras.execute_values(cur, query_template, batch)
+        #                 self.rds_conn.commit()
+        #             except psycopg2.errors.InFailedSqlTransaction as e:
+        #                 print(f"InFailedSQLTransaction: {e}")
+        #                 self.rds_conn.rollback()
+        #                 psycopg2.extras.execute_values(cur, query_template, batch)
+        #                 self.rds_conn.commit()
+        # except aiohttp.client_exceptions.ClientResponseError as e:
+        #     print(f"Ticker: {ticker} not pulling")
 
 
-
-async def call_all_stocks_aggregates(n):
+async def call_all_stocks_aggregates():
 
     stream = RestStreams()
-    semaphore = asyncio.Semaphore(n)
+    # semaphore = asyncio.Semaphore(n)
     start_date = datetime.date.today() - datetime.timedelta(days=365)
     end_date = datetime.date.today()
 
-    async def sem_task(task):
-        async with semaphore:
-            await task
+    # async def sem_task(task):
+    #     async with semaphore:
+    #         await task
 
     all_calls = [
         stream.request_and_insert_stocks_equities_aggregates(
@@ -166,12 +177,12 @@ async def call_all_stocks_aggregates(n):
         for tkr in stream.all_equities_symbols_list
     ]
 
-    await asyncio.gather(*(sem_task(task) for task in all_calls))
+    await asyncio.gather(*all_calls)
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(call_all_stocks_aggregates(n=100))
+    loop.run_until_complete(call_all_stocks_aggregates())
     # loop.run_forever(stream.call_all_stocks_aggregates())
 
     # assert stream.rds_connected, "Streams is not connected to the database"
