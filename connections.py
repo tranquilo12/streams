@@ -3,7 +3,7 @@ import psycopg2
 # import asyncpg
 import aiopg
 from sqlalchemy import create_engine
-from polygon import WebSocketClient, AsyncRESTClient, STOCKS_CLUSTER
+from polygon import WebSocketClient, AsyncRESTClient, STOCKS_CLUSTER, RESTClient
 from logger import StreamsLogger
 
 
@@ -122,7 +122,8 @@ class Connections(StreamsLogger):
         :return: None
         """
         try:
-            self.rest_client = AsyncRESTClient(auth_key=self.api_key)
+            # self.rest_client = AsyncRESTClient(auth_key=self.api_key)
+            self.rest_client = RESTClient(auth_key=self.api_key)
             self.logger.info(msg="Polygon REST connection established")
         except (ValueError, Exception) as e:
             self.logger.error(

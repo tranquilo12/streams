@@ -24,13 +24,28 @@ class AsyncRESTClient:
     ) -> Type[models.AnyDefinition]:
         # params["apiKey"] = self.auth_key
 
-        async with aiohttp.ClientSession() as session:
+        connector = aiohttp.TCPConnector(limit=60)
+        async with aiohttp.ClientSession(connector=connector) as session:
             async with session.get(endpoint, params=self._auth) as resp:
                 if resp.status == 200:
                     resp_json = await resp.json()
                     return unmarshal.unmarshal_json(response_type, resp_json)
                 else:
                     resp.raise_for_status()
+
+    async def _handle_response_with_session(
+            self, session: aiohttp.ClientSession, response_type: str, endpoint: str, params: Dict[str, str]
+    ) -> Type[models.AnyDefinition]:
+        """
+
+        :type session: aiohttp.TCPConnector
+        """
+        async with session.get(endpoint, params=self._auth) as resp:
+            if resp.status == 200:
+                resp_json = await resp.json()
+                return unmarshal.unmarshal_json(response_type, resp_json)
+            else:
+                resp.raise_for_status()
 
     async def reference_tickers(
         self, **query_params
@@ -225,11 +240,10 @@ class AsyncRESTClient:
         )
 
     async def stocks_equities_aggregates(
-        self, ticker, multiplier, timespan, from_, to, **query_params
+        self, session, ticker, multiplier, timespan, from_, to, **query_params
     ) -> models.StocksEquitiesAggregatesApiResponse:
         endpoint = f"{self.url}/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_}/{to}"
-        return await self._handle_response(
-            "StocksEquitiesAggregatesApiResponse", endpoint, query_params
+        return await self._handle_response_with_session(session=session, response_type="StocksEquitiesAggregatesApiResponse", endpoint=endpoint, params=query_params
         )
 
     async def stocks_equities_grouped_daily(
