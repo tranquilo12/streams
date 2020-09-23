@@ -3,7 +3,7 @@ import psycopg2
 # import asyncpg
 import aiopg
 from sqlalchemy import create_engine
-from polygon import WebSocketClient, AsyncRESTClient, STOCKS_CLUSTER, RESTClient
+from polygon import WebSocketClient, STOCKS_CLUSTER, RESTClient
 from logger import StreamsLogger
 
 

@@ -10,7 +10,7 @@ import asyncio
 import aiopg
 import aiohttp
 from tqdm.auto import tqdm
-from polygon import WebSocketClient, RESTClient, AsyncRESTClient, STOCKS_CLUSTER
+from polygon import WebSocketClient, RESTClient, STOCKS_CLUSTER
 from multiprocessing import Pool, Semaphore, Manager
 from typing import Optional, Union
 from connections import Connections
@@ -218,34 +218,42 @@ def process_stocks_equities_aggregates(
     :param multiplier:
     :return:
     """
+    # tried of dealing with instances where the dfs columns dont match. If they dont match, and get a KeyError,
+    # then just return None, None
     try:
-        df_ = pd.DataFrame.from_records(records.results)
-    except TypeError as e:
+        try:
+            df_ = pd.DataFrame.from_records(records.results)
+        except TypeError as e:
+            return None, None
+
+        df_ = df_.rename(columns=historic_agg_columns)
+        df_["ticker"] = ticker
+        df_["timespan"] = timespan
+        df_["multiplier"] = multiplier
+
+        # df_ = df_[["ticker"] + list(historic_agg_columns.values())]
+        df_.loc[:, "timestamp"] = pd.to_datetime(df_["timestamp"], unit="ms")
+
+        if "n_items" in df_.columns:
+            df_ = df_.drop(columns=["n_items"], inplace=False)
+
+        df_ = df_.replace({np.NaN: None})
+        columns = df_.columns.tolist()
+        batch_size = len(df_) // 10
+        values = [[val for val in d.values()] for d in df_.to_dict(orient="records")]
+
+        # turn the entire dataframe into a batch
+        try:
+            batched = [b for b in batch(values, n=batch_size)]
+        except ValueError as e:
+            return None, None
+
+        # make the query template for this query, that will be inserted into the table
+        all_cols_str = ",".join(columns)
+        query_template = f"INSERT INTO polygon_stocks_agg_candles ({all_cols_str}) VALUES %s ON CONFLICT (ticker, timespan, multiplier, volume, timestamp) DO NOTHING"
+
+    except KeyError as e:
         return None, None
-
-    df_ = df_.rename(columns=historic_agg_columns)
-    df_["ticker"] = [ticker for i in range(len(df_))]
-
-    df_ = df_[["ticker"] + list(historic_agg_columns.values())]
-    df_.loc[:, "timestamp"] = pd.to_datetime(df_["timestamp"], unit="ms")
-    df_["timespan"] = timespan
-    df_["multiplier"] = multiplier
-
-    df_ = df_.drop(columns=["n_items"], inplace=False)
-    df_ = df_.replace({np.NaN: None})
-    columns = df_.columns.tolist()
-    batch_size = len(df_) // 10
-    values = [[val for val in d.values()] for d in df_.to_dict(orient="records")]
-
-    # turn the entire dataframe into a batch
-    try:
-        batched = [b for b in batch(values, n=batch_size)]
-    except ValueError as e:
-        return None, None
-
-    # make the query template for this query, that will be inserted into the table
-    all_cols_str = ",".join(columns)
-    query_template = f"INSERT INTO polygon_stocks_agg_candles ({all_cols_str}) VALUES %s ON CONFLICT (ticker, timespan, multiplier, volume, timestamp) DO NOTHING"
 
     return batched, query_template
 
@@ -281,7 +289,7 @@ def wrapper_func(
     conn_params: dict,
     sem: Semaphore,
     multiplier: int = 1,
-    timespan: str = "day",
+    timespan: str = "minute",
     from_: datetime.date = datetime.date.today() - datetime.timedelta(days=365),
     to: datetime.date = datetime.date.today(),
     # process_stocks_equities_aggregates
@@ -327,7 +335,7 @@ def wrapper_func(
 
 
 CONCURRENT_DOWNLOADS = 100
-CPU_NUM = 4
+CPU_NUM = 8
 
 if __name__ == "__main__":
 
@@ -335,7 +343,7 @@ if __name__ == "__main__":
     semaphore = manager.Semaphore(value=CONCURRENT_DOWNLOADS)
 
     stream = RestStreams()
-    equities_list = stream.all_equities_symbols_list[960:]
+    equities_list = stream.all_equities_symbols_list[22:]
     rest_client = stream.rest_client
     rds_params = stream.conn_params
 
@@ -351,43 +359,3 @@ if __name__ == "__main__":
                     },
                 ).get(timeout=100)
             )
-
-    # loop = asyncio.get_event_loop()
-    # loop.run_until_complete(call_all_stocks_aggregates())
-    # loop.run_forever(stream.call_all_stocks_aggregates())
-
-    # assert stream.rds_connected, "Streams is not connected to the database"
-
-    # s_date = datetime.date.today() - datetime.timedelta(days=1)
-    # e_date = datetime.date.today()
-
-    # for t in tqdm(tkr, desc="For each ticker..."):
-    #     print(f"Ticker: {t}...")
-    #     # bbo_df = stream.rest_historic_n_bbo_quotes(
-    #     #     ticker=ticker, start_date=s_date, end_date=e_date
-    #     # )
-    #
-    #     data_df = stream.rest_historic_aggregates(
-    #         ticker=t, start_date=s_date, end_date=e_date, timespan="minute"
-    #     )
-
-    # stream.rest_insert_aggregates(
-    #     df=data_df, insert_query_template=insert_into_polygon_stocks_bbo, nbbo=False
-    # )
-
-    # stream.establish_websocket_client()
-    # stream.websocket_client.run_async()
-    # stream.websocket_client.subscribe("A.MSFT", "AM.MSFT")
-
-    #     with self.rds_conn.cursor() as cur:
-    #         for batch in tqdm(batched, desc="Inserting each aggregate query..."):
-    #             try:
-    #                 psycopg2.extras.execute_values(cur, query_template, batch)
-    #                 self.rds_conn.commit()
-    #             except psycopg2.errors.InFailedSqlTransaction as e:
-    #                 print(f"InFailedSQLTransaction: {e}")
-    #                 self.rds_conn.rollback()
-    #                 psycopg2.extras.execute_values(cur, query_template, batch)
-    #                 self.rds_conn.commit()
-    # except aiohttp.client_exceptions.ClientResponseError as e:
-    #     print(f"Ticker: {ticker} not pulling")
