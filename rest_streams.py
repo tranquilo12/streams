@@ -14,6 +14,11 @@ from polygon import WebSocketClient, RESTClient, STOCKS_CLUSTER
 from multiprocessing import Pool, Semaphore, Manager
 from typing import Optional, Union
 from connections import Connections
+
+import paramiko
+import sshtunnel
+from sshtunnel import SSHTunnelForwarder
+
 from all_sql import (
     insert_into_polygon_trades,
     insert_into_polygon_quotes,
@@ -22,69 +27,15 @@ from all_sql import (
 )
 
 
-class PostgresConnector(object):
-    def __init__(self, db_url):
-        self.db_url = db_url
-        self.pool = self.init_pool()
-
-    def init_pool(self):
-        cpus = multiprocessing.cpu_count()
-        return multiprocessing.Pool(cpus, initializer=self.init_connection(self.db_url))
-
-    @classmethod
-    def init_connection(cls, db_url):
-        def _init_connection():
-            LOGGER.info("Creating Postgres engine")
-            cls.engine = create_engine(db_url)
-
-        return _init_connection
-
-    def run_parallel_queries(self, queries):
-        results = []
-        try:
-            for i in self.pool.imap_unordered(self.execute_parallel_query, queries):
-                results.append(i)
-        except Exception as exception:
-            LOGGER.error(
-                "Error whilst executing %s queries in parallel: %s",
-                len(queries),
-                exception,
-            )
-            raise
-        finally:
-            pass
-            # self.pool.close()
-            # self.pool.join()
-
-        LOGGER.info(
-            "Parallel query ran producing %s sets of results of type: %s",
-            len(results),
-            type(results),
-        )
-
-        return list(chain.from_iterable(results))
-
-    def execute_parallel_query(self, query):
-        with self.engine.connect() as conn:
-            with conn.begin():
-                result = conn.execute(query)
-                return result.fetchall()
-
-    def __getstate__(self):
-        # this is a hack, if you want to remove this method, you should
-        # remove self.pool and just pass pool explicitly
-        self_dict = self.__dict__.copy()
-        del self_dict["pool"]
-        return self_dict
-
-
 class RestStreams(Connections):
     def __init__(self):
         super().__init__()
-        self.all_equities_symbols_list = pd.read_sql(
-            con=self.rds_engine, sql="SELECT symbol from equities_info;"
-        ).values
-        self.all_equities_symbols_list = list(self.all_equities_symbols_list.flatten())
+
+        # self.all_equities_symbols_list = pd.read_sql(
+        #     con=self.rds_engine, sql="SELECT symbol from equities_info;"
+        # ).values
+
+        # self.all_equities_symbols_list = list(self.all_equities_symbols_list.flatten())
 
         self.historic_nbbo_quotes_columns: dict = {
             "T": "ticker",
@@ -207,7 +158,11 @@ def batch(iterable: list, n: int) -> list:
 
 
 def process_stocks_equities_aggregates(
-    records: Optional[requests.Response], historic_agg_columns: dict, ticker: str, timespan: str, multiplier: int,
+    records: Optional[requests.Response],
+    historic_agg_columns: dict,
+    ticker: str,
+    timespan: str,
+    multiplier: int,
 ) -> [list, str]:
     """
     Make sure it's easy to decipher the processing, by separating the logic
@@ -258,27 +213,44 @@ def process_stocks_equities_aggregates(
     return batched, query_template
 
 
+def establish_ssh_tunnel(ssh_conn_params: dict) -> SSHTunnelForwarder:
+    try:
+        t = SSHTunnelForwarder(**ssh_conn_params)
+    except (
+        sshtunnel.BaseSSHTunnelForwarderError,
+        sshtunnel.HandlerSSHTunnelForwarderError,
+    ) as e:
+        t = None
+        print(f"Error: {e}")
+    return t
+
+
 def insert_into_db(
-    conn_params: dict, batched: list, query_template: str, pid: int, ticker: str
+    ssh_conn_params: dict,
+    db_conn_params: dict,
+    batched: list,
+    query_template: str,
+    ticker: str,
 ):
     """
     Take the stuff from process_stocks_equities_aggregates and push it into the database
-    :param conn_params:
+    :param ssh_conn_params:
+    :param db_conn_params:
     :param batched:
     :param query_template:
-    :param pid:
     :param ticker:
     :return:
     """
-    conn = psycopg2.connect(**conn_params)
-    with conn.cursor() as cur:
-        for b in batched:
-            try:
-                psycopg2.extras.execute_values(cur, query_template, b)
-                conn.commit()
-            except psycopg2.errors.InFailedSqlTransaction as e:
-                print(f"Insert for pid: {pid} did not work, ticker: {ticker}")
-                pass
+    with psycopg2.connect(**db_conn_params) as conn:
+        with conn.cursor() as cur:
+            for b in batched:
+                try:
+                    psycopg2.extras.execute_values(cur, query_template, b)
+                    conn.commit()
+                except psycopg2.errors.InFailedSqlTransaction as e:
+                    print(f"Insert did not work, ticker: {ticker}")
+                    conn.rollback()
+                    pass
 
 
 def wrapper_func(
@@ -286,10 +258,11 @@ def wrapper_func(
     ticker: str,
     client: RESTClient,
     # insert_into_db params
-    conn_params: dict,
+    ssh_conn_params: dict,
+    db_conn_params: dict,
     sem: Semaphore,
     multiplier: int = 1,
-    timespan: str = "minute",
+    timespan: str = "day",
     from_: datetime.date = datetime.date.today() - datetime.timedelta(days=365),
     to: datetime.date = datetime.date.today(),
     # process_stocks_equities_aggregates
@@ -319,12 +292,17 @@ def wrapper_func(
     )
 
     batched, query_template = process_stocks_equities_aggregates(
-        records=records, historic_agg_columns=historic_agg_columns, ticker=ticker, timespan=timespan, multiplier=multiplier
+        records=records,
+        historic_agg_columns=historic_agg_columns,
+        ticker=ticker,
+        timespan=timespan,
+        multiplier=multiplier,
     )
 
     if (batched is not None) & (query_template is not None):
         insert_into_db(
-            conn_params=conn_params,
+            ssh_conn_params=ssh_conn_params,
+            db_conn_params=db_conn_params,
             query_template=query_template,
             batched=batched,
             pid=pid,
@@ -343,19 +321,41 @@ if __name__ == "__main__":
     semaphore = manager.Semaphore(value=CONCURRENT_DOWNLOADS)
 
     stream = RestStreams()
-    equities_list = stream.all_equities_symbols_list[22:]
+    stream.establish_rest_client()
+
     rest_client = stream.rest_client
-    rds_params = stream.conn_params
+    ssh_conn_params = stream.ssh_conn_params
+    db_conn_params = stream.db_conn_params
+
+    tunnel = establish_ssh_tunnel(ssh_conn_params)
+    tunnel.start()
+    db_conn_params["port"] = int(tunnel.local_bind_port)
+
+    # query the db for equities list
+    query = "SELECT DISTINCT t.symbol FROM public.equities_info t;"
+    with psycopg2.connect(**db_conn_params) as e_conn:
+        with e_conn.cursor() as cur:
+            cur.execute(query)
+            equities_list = cur.fetchall()
+
+    tunnel.close()
+
+    if "tunnel" in locals():
+        del tunnel
+
+    equities_list = [val[0] for val in equities_list]
+    equities_list = equities_list[4046:]
 
     results = []
     with Pool(processes=CPU_NUM) as pool:
-        target = functools.partial(wrapper_func, sem=semaphore, client=rest_client, conn_params=rds_params)
+        target = functools.partial(
+            wrapper_func,
+            sem=semaphore,
+            client=rest_client,
+            db_conn_params=db_conn_params,
+            ssh_conn_params=ssh_conn_params,
+        )
         for tkr in equities_list:
             results.append(
-                pool.apply_async(
-                    func=target,
-                    kwds={
-                        "ticker": tkr,
-                    },
-                ).get(timeout=100)
+                pool.apply_async(func=target, kwds={"ticker": tkr}).get(timeout=100)
             )

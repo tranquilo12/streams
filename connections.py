@@ -1,10 +1,18 @@
 import configparser
 import psycopg2
+
 # import asyncpg
 import aiopg
 from sqlalchemy import create_engine
 from polygon import WebSocketClient, STOCKS_CLUSTER, RESTClient
 from logger import StreamsLogger
+
+import paramiko
+import sshtunnel
+from sshtunnel import SSHTunnelForwarder
+
+sshtunnel.SSH_TIMEOUT = 10.0
+sshtunnel.TUNNEL_TIMEOUT = 10.0
 
 
 class Connections(StreamsLogger):
@@ -15,17 +23,41 @@ class Connections(StreamsLogger):
         config = configparser.ConfigParser()
         config.read("config.ini")
 
+        self.my_private_key_path = "C:\\Users\\SHIRAM\\Downloads\\new_ts_pair.pem"
+        self.my_private_key = paramiko.RSAKey.from_private_key_file(
+            self.my_private_key_path
+        )
+        self.tunnel = None
+
         # for the other parameters
-        self.conn_params = {
-            "host": config["TEST"]["host"],
-            "password": config["TEST"]["password"],
-            # "port": config["TEST"]["port"],
-            "user": config["TEST"]["user"],
-            "database": config["TEST"]["db"],
+        self.db_conn_params = {
+            "host": config["DB"]["host"],
+            "password": config["DB"]["password"],
+            "port": int(config["DB"]["port"]),
+            "user": config["DB"]["user"],
+            "database": config["DB"]["name"],
+            #"options": "-c statement_timeout=0",
+            "keepalives": 1,
+            "keepalives_idle": 5,
+            "keepalives_interval": 2,
+            "keepalives_count": 100
         }
-        self.dsn = f"dbname={self.conn_params['database']} user={self.conn_params['user']} password={self.conn_params['password']} host={self.conn_params['host']}"
+        self.ssh_conn_params = {
+            "ssh_address_or_host": (config["SSH"]["host"]),
+            "ssh_username": config["SSH"]["user"],
+            "ssh_pkey": self.my_private_key,
+            "remote_bind_address": (
+                config["SSH"]["host"],
+                int(config["DB"]["port"]),
+            ),
+            "local_bind_address": (
+                config["SSH"]["local_bind_address"],
+                int(config["SSH"]["local_bind_port"]),
+            ),
+        }
+        self.dsn = f"dbname={self.db_conn_params['database']} user={self.db_conn_params['user']} password={self.db_conn_params['password']} host={self.db_conn_params['host']}"
         self.api_key = config["POLYGON"]["key"]
-        self.rds_url = config["TEST"]["url"]
+        # self.rds_url = config["TEST"]["url"]
         self.rds_connected = None
         self.async_rds_connected = None
         self.async_rds_conn = None
@@ -35,7 +67,9 @@ class Connections(StreamsLogger):
         self.rest_client = None
 
         # make sure all the conns are made
-        self.establish_all_connections()
+        # self.establish_ssh_tunnel()
+        # self.start_ssh_tunnel()
+        # self.establish_all_connections()
 
     @staticmethod
     def datetime_converter(x: int):
@@ -62,22 +96,42 @@ class Connections(StreamsLogger):
         for idx in range(0, l, n):
             yield iterable[idx : min(idx + n, l)]
 
+    def establish_ssh_tunnel(self) -> None:
+        try:
+            self.tunnel = SSHTunnelForwarder(**self.ssh_conn_params)
+        except (
+            sshtunnel.BaseSSHTunnelForwarderError,
+            sshtunnel.HandlerSSHTunnelForwarderError,
+        ) as e:
+            self.tunnel = None
+            print("Error: {e}")
+
+    def start_ssh_tunnel(self) -> None:
+        if self.tunnel:
+            self.tunnel.start()
+
+    def close_ssh_tunnel(self) -> None:
+        if self.tunnel:
+            self.tunnel.stop()
+
     def establish_rds_connection(self) -> None:
         """
-        Make sure the rds connection is made to the test database
+        With ssh now,
+        make sure tunnel is created, and open and then attempt to make connection object
         :return: None
         """
-        connected = False
         try:
-            self.rds_conn = psycopg2.connect(**self.conn_params)
-            self.rds_engine = create_engine(self.rds_url)
+            if self.tunnel is not None:
+                self.db_conn_params["port"] = self.tunnel.local_bind_port
+
+            self.rds_conn = psycopg2.connect(**self.db_conn_params)
             self.rds_connected = True
             self.logger.info(msg="RDS Connection established")
         except (
             ValueError,
             PermissionError,
             psycopg2.OperationalError,
-        ):
+        ) as e:
             self.logger.error(msg=f"RDS Connection not established, with error: {e}")
             self.rds_connected = False
 
