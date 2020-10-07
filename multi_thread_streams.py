@@ -1,18 +1,14 @@
 from polygon import RESTClient
-from rest_streams import establish_ssh_tunnel, insert_into_db, batch
-from threading import Thread, ThreadError
+from threading import Thread
 from connections import Connections
 from tqdm.auto import tqdm
 from typing import Optional
 from queue import Queue
-from time import time
 import pandas as pd
 import numpy as np
 import requests
 import psycopg2
 import datetime
-import sys
-import os
 
 
 class Worker(Thread):
@@ -48,6 +44,56 @@ class ThreadPool:
 
     def wait_completion(self):
         self.tasks.join()
+
+
+def insert_into_db(
+    db_conn_params: dict,
+    batched: list,
+    query_template: str,
+    ticker: str,
+):
+    """
+    Take the stuff from process_stocks_equities_aggregates and push it ino the database
+    :param db_conn_params:
+    :param batched:
+    :param query_template:
+    :param ticker:
+    :return:
+    """
+    with psycopg2.connect(**db_conn_params) as conn:
+        with conn.cursor() as cur:
+            for b in batched:
+                try:
+                    psycopg2.extras.execute_values(cur, query_template, b)
+                    conn.commit()
+                except psycopg2.errors.InFailedSqlTransaction as e:
+                    print(f"Insert did not work, ticker: {ticker}")
+                    conn.rollback()
+                    pass
+
+
+def establish_ssh_tunnel(ssh_conn_params: dict) -> SSHTunnelForwarder:
+    try:
+        t = SSHTunnelForwarder(**ssh_conn_params)
+    except (
+        sshtunnel.BaseSSHTunnelForwarderError,
+        sshtunnel.HandlerSSHTunnelForwarderError,
+    ) as e:
+        t = None
+        print(f"Error: {e}")
+    return t
+
+
+def batch(iterable: list, n: int) -> list:
+    """
+    Take an iterable and give back batches
+    :param iterable: a list
+    :param n: batch size
+    :return: a list
+    """
+    l = len(iterable)
+    for idx in range(0, l, n):
+        yield iterable[idx : min(idx + n, l)]
 
 
 def request_stocks_equities_aggregates(
@@ -113,7 +159,7 @@ def process_stocks_equities_aggregates(
         try:
             df_ = pd.DataFrame.from_records(records.results)
         except TypeError as e:
-            print(f"TypeError: {e}")
+            # print(f"TypeError: {e}")
             return None, None
 
         df_ = df_.rename(columns=historic_agg_columns)
@@ -135,10 +181,10 @@ def process_stocks_equities_aggregates(
         try:
             batched = [b for b in batch(values, n=batch_size)]
         except ValueError as e:
-            print(f"ValueError: {e}")
+            # print(f"ValueError: {e}")
             return None, None
 
-        # make the query template for this query, that will be inserted into the table
+        # make te query template for this query, that will be inserted into the table
         all_cols_str = ",".join(columns)
         query_template = f"INSERT INTO polygon_stocks_agg_candles ({all_cols_str}) VALUES %s ON CONFLICT (ticker, timespan, multiplier, vwap, timestamp) DO NOTHING"
 
@@ -150,6 +196,7 @@ def process_stocks_equities_aggregates(
 
 
 def download_and_push_into_db(
+    logger,
     ticker: str,
     client: RESTClient,
     ssh_conn_params: dict,
@@ -193,26 +240,27 @@ def download_and_push_into_db(
             ticker=ticker,
         )
     else:
-        print(f"ticker : {ticker} has returned None.")
+        logger.info(msg=f"ticker : {ticker} has returned None.")
 
 
-def get_all_equities_list(conns, db_conn_params) -> list:
+def get_all_equities_list(logger, db_conn_params) -> list:
     # query the db for equities list
 
-    conns.logger.info(msg="Making ssh tunnel to get equities list...")
+    logger.info(msg="Making ssh tunnel to get equities list...")
     try:
         query = "SELECT DISTINCT t.symbol FROM public.equities_info t;"
         with psycopg2.connect(**db_conn_params) as e_conn:
             with e_conn.cursor() as cur:
-                conns.logger.info(msg="Querying db...")
+                logger.info(msg="Querying db...")
                 cur.execute(query)
-                conns.logger.info(msg="Fetchall query...")
+                logger.info(msg="Fetchall query...")
                 equities_list = cur.fetchall()
 
         equities_list = [val[0].replace(" ", "") for val in equities_list]
+        equities_list = [val for val in equities_list if ("^" not in val)]
 
     except psycopg2.OperationalError as e:
-        conns.logger.error(msg=f"Psycopg2 Op Error: {e}")
+        logger.error(msg=f"Psycopg2 Op Error: {e}")
         equities_list = None
 
     return equities_list
@@ -233,18 +281,22 @@ if __name__ == "__main__":
     tunnel.start()
     db_conn_params["port"] = int(tunnel.local_bind_port)
 
-    equities_list = get_all_equities_list(conns=conns, db_conn_params=db_conn_params)
+    equities_list = get_all_equities_list(
+        logger=conns.logger, db_conn_params=db_conn_params
+    )
 
     conns.logger.info(msg="Starting thread pool...")
-    pool = ThreadPool(num_threads=9)
+    pool = ThreadPool(num_threads=4)
     for eq in tqdm(equities_list):
         pool.add_tasks(
             func=download_and_push_into_db,
+            logger=conns.logger,
             client=rest_client,
             ticker=eq,
             ssh_conn_params=ssh_conn_params,
             db_conn_params=db_conn_params,
-            timespan="minute",
+            timespan="day",
+            from_=datetime.date.today() - datetime.timedelta(days=10),
         )
 
     conns.logger.info(msg="Waiting for pool tasks to complete...")

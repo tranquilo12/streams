@@ -233,7 +233,7 @@ def insert_into_db(
     ticker: str,
 ):
     """
-    Take the stuff from process_stocks_equities_aggregates and push it into the database
+    Take the stuff from process_stocks_equities_aggregates and push it ino the database
     :param ssh_conn_params:
     :param db_conn_params:
     :param batched:
