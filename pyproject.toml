@@ -26,6 +26,9 @@ boto3 = "^1.15.5"
 urllib3 = {extras = ["secure"], version = "^1.25.10"}
 paramiko = "^2.7.2"
 sshtunnel = "^0.1.5"
+dash = "1.16.2"
+scikit-learn = "^0.23.2"
+redis = "^3.5.3"
 
 [tool.poetry.dev-dependencies]
 
