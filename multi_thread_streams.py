@@ -418,6 +418,29 @@ def get_all_equities_list(logger, db_conn_params: dict) -> list:
     return res
 
 
+def get_equities_list(ssh_conn_params, logger, db_conn_params) -> list:
+    """
+    Just make a function for this
+    :param ssh_conn_params:
+    :param logger:
+    :param db_conn_params:
+    :return:
+    """
+
+    t = establish_ssh_tunnel(ssh_conn_params=ssh_conn_params)
+    t.daemon_transport = True
+    t.daemon_forward_servers = True
+    t.start()
+    db_conn_params["port"] = int(t.local_bind_port)
+
+    res = get_all_equities_list(logger=logger, db_conn_params=db_conn_params)
+
+    if t.is_alive | t.is_active:
+        t.stop()
+
+    return res
+
+
 if __name__ == "__main__":
 
     conns = Connections()
