@@ -362,12 +362,17 @@ def download_and_push_into_db(
     try:
         if isinstance(keys, list):
             results = pull_from_redis_cache(redis_client=redis_client, keys_list=keys)
+        else:
+            results = None
     except Exception as e:
         results = None
         print(f"Dont know exception location 3: {e}")
 
     try:
-        batched, query_template = parse_redis_output_for_postgres(results=results)
+        if isinstance(results, dict):
+            batched, query_template = parse_redis_output_for_postgres(results=results)
+        else:
+            batched, query_template = None, None
     except Exception as e:
         batched, query_template = None, None
         print(f"Dont know exception location 4: {e}")
@@ -434,7 +439,7 @@ if __name__ == "__main__":
     )
 
     conns.logger.info(msg="Starting thread pool...")
-    pool = ThreadPool(num_threads=4)
+    pool = ThreadPool(num_threads=8)
     for eq in tqdm(equities_list):
         pool.add_tasks(
             func=download_and_push_into_db,
@@ -445,7 +450,7 @@ if __name__ == "__main__":
             ticker=eq,
             db_conn_params=db_conn_params,
             timespan="day",
-            from_=datetime.date.today() - datetime.timedelta(days=23),
+            from_=datetime.date.today() - datetime.timedelta(days=2),
         )
 
     conns.logger.info(msg="Waiting for pool tasks to complete...")
