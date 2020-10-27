@@ -6,6 +6,7 @@ import aiopg
 from sqlalchemy import create_engine
 from polygon import WebSocketClient, STOCKS_CLUSTER, RESTClient
 from logger import StreamsLogger
+import redis
 
 import paramiko
 import sshtunnel
@@ -23,7 +24,9 @@ class Connections(StreamsLogger):
         config = configparser.ConfigParser()
         config.read("config.ini")
 
-        self.my_private_key_path = "C:\\Users\\SHIRAM\\Downloads\\new_ts_pair.pem"
+        self.my_private_key_path = (
+            "C:\\Users\\SHIRAM\\Documents\\streams\\ssl_certs\\new_ts_pair.pem"
+        )
         self.my_private_key = paramiko.RSAKey.from_private_key_file(
             self.my_private_key_path
         )
@@ -36,28 +39,31 @@ class Connections(StreamsLogger):
             "port": int(config["DB"]["port"]),
             "user": config["DB"]["user"],
             "database": config["DB"]["name"],
-            #"options": "-c statement_timeout=0",
+            # "options": "-c statement_timeout=0",
             "keepalives": 1,
             "keepalives_idle": 5,
             "keepalives_interval": 2,
-            "keepalives_count": 100
+            "keepalives_count": 100,
         }
         self.ssh_conn_params = {
             "ssh_address_or_host": (config["SSH"]["host"]),
             "ssh_username": config["SSH"]["user"],
             "ssh_pkey": self.my_private_key,
-            "remote_bind_address": (
-                config["SSH"]["host"],
-                int(config["DB"]["port"]),
-            ),
+            "remote_bind_address": (config["SSH"]["host"], int(config["DB"]["port"]),),
             "local_bind_address": (
                 config["SSH"]["local_bind_address"],
                 int(config["SSH"]["local_bind_port"]),
             ),
         }
+        self.redis_conn_params = {
+            "host": config["REDIS"]["host"],
+            "port": int(config["REDIS"]["port"]),
+            "password": config["REDIS"]["password"],
+            "db": int(config["REDIS"]["db"]),
+            "socket_timeout": int(config["REDIS"]["socket_timeout"]),
+        }
         self.dsn = f"dbname={self.db_conn_params['database']} user={self.db_conn_params['user']} password={self.db_conn_params['password']} host={self.db_conn_params['host']}"
         self.api_key = config["POLYGON"]["key"]
-        # self.rds_url = config["TEST"]["url"]
         self.rds_connected = None
         self.async_rds_connected = None
         self.async_rds_conn = None
@@ -65,6 +71,8 @@ class Connections(StreamsLogger):
         self.rds_engine = None
         self.websocket_client = None
         self.rest_client = None
+        self.redis_pool = None
+        self.redis_client = None
 
         # make sure all the conns are made
         # self.establish_ssh_tunnel()
@@ -95,6 +103,24 @@ class Connections(StreamsLogger):
         l = len(iterable)
         for idx in range(0, l, n):
             yield iterable[idx : min(idx + n, l)]
+
+    def establish_redis_connection(self):
+        """
+        Establish the connection to the local/remote Redis server
+        :return:
+        """
+        try:
+            self.redis_pool = redis.ConnectionPool(**self.redis_conn_params)
+            self.redis_client = redis.StrictRedis(
+                connection_pool=self.redis_pool, charset="utf-8", decode_responses=True
+            )
+            ping = self.redis_client.ping()
+            if ping:
+                pass
+
+        except redis.AuthenticationError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
 
     def establish_ssh_tunnel(self) -> None:
         try:
@@ -127,11 +153,7 @@ class Connections(StreamsLogger):
             self.rds_conn = psycopg2.connect(**self.db_conn_params)
             self.rds_connected = True
             self.logger.info(msg="RDS Connection established")
-        except (
-            ValueError,
-            PermissionError,
-            psycopg2.OperationalError,
-        ) as e:
+        except (ValueError, PermissionError, psycopg2.OperationalError,) as e:
             self.logger.error(msg=f"RDS Connection not established, with error: {e}")
             self.rds_connected = False
 
@@ -192,3 +214,4 @@ class Connections(StreamsLogger):
         self.establish_rds_connection()
         # self.establish_websocket_client()
         self.establish_rest_client()
+        self.establish_redis_connection()
