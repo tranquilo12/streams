@@ -2,6 +2,7 @@ from polygon import WebSocketClient, STOCKS_CLUSTER, RESTClient
 from sqlalchemy import create_engine
 from sshtunnel import SSHTunnelForwarder
 from logger import StreamsLogger
+from typing import Union
 import configparser
 import paramiko
 import sshtunnel
@@ -75,7 +76,7 @@ class Connections(StreamsLogger):
         # self.establish_all_connections()
 
     @staticmethod
-    def datetime_converter(x: int):
+    def datetime_converter(x: int) -> Union[datetime.datetime, np.NaN]:
         try:
             res = datetime.datetime.fromtimestamp(x / 1e3)
         except OSError as e:
