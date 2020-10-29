@@ -2,7 +2,9 @@ from polygon import WebSocketClient, STOCKS_CLUSTER, RESTClient
 from sqlalchemy import create_engine
 from sshtunnel import SSHTunnelForwarder
 from logger import StreamsLogger
-from typing import Union
+from typing import Optional
+import numpy as np
+import datetime
 import configparser
 import paramiko
 import sshtunnel
@@ -59,7 +61,7 @@ class Connections(StreamsLogger):
             "socket_timeout": int(config["REDIS"]["socket_timeout"]),
         }
         self.dsn = f"dbname={self.db_conn_params['database']} user={self.db_conn_params['user']} password={self.db_conn_params['password']} host={self.db_conn_params['host']}"
-        self.api_key = config["POLYGON"]["key"]
+        self.api_key = config["POLYGON"]["reverent_visvesvaraya_key"]
         self.rds_connected = None
         self.async_rds_connected = None
         self.async_rds_conn = None
@@ -76,7 +78,7 @@ class Connections(StreamsLogger):
         # self.establish_all_connections()
 
     @staticmethod
-    def datetime_converter(x: int) -> Union[datetime.datetime, np.NaN]:
+    def datetime_converter(x: int) -> Optional[datetime.datetime]:
         try:
             res = datetime.datetime.fromtimestamp(x / 1e3)
         except OSError as e:
