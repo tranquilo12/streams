@@ -11,6 +11,7 @@ import sshtunnel
 import requests
 import psycopg2
 import datetime
+import logging
 import redis
 import pickle
 import json
@@ -53,7 +54,7 @@ class ThreadPool:
 
 def insert_into_db(
     db_conn_params: dict, batched: list, query_template: str, ticker: str,
-):
+) -> None:
     """
     Take the stuff from process_stocks_equities_aggregates and push it ino the database
     :param db_conn_params:
@@ -304,7 +305,7 @@ def parse_redis_output_for_postgres(results: dict) -> [list, str]:
 
 
 def download_and_push_into_db(
-    logger,
+    logger: logging.Logger,
     disable_logging: bool,
     ticker: str,
     rest_client: RESTClient,
@@ -395,7 +396,7 @@ def download_and_push_into_db(
             logger.info(msg=f"Ticker : {ticker} has returned None.")
 
 
-def get_all_equities_list(logger, db_conn_params: dict) -> list:
+def get_all_equities_list(logger: logging.Logger, db_conn_params: dict) -> list:
     # query the db for equities list
 
     logger.info(msg="Making ssh tunnel to get equities list...")
@@ -418,7 +419,9 @@ def get_all_equities_list(logger, db_conn_params: dict) -> list:
     return res
 
 
-def get_equities_list(ssh_conn_params, logger, db_conn_params) -> list:
+def get_equities_list(
+    ssh_conn_params: dict, logger: logging.Logger, db_conn_params: dict
+) -> list:
     """
     Just make a function for this
     :param ssh_conn_params:
@@ -447,19 +450,17 @@ if __name__ == "__main__":
     conns.establish_rest_client()
     conns.establish_redis_connection()
 
-    rest_client = conns.rest_client
-    ssh_conn_params = conns.ssh_conn_params
-    db_conn_params = conns.db_conn_params
+    r_client = conns.rest_client
+    ssh_params = conns.ssh_conn_params
+    db_params = conns.db_conn_params
 
-    tunnel = establish_ssh_tunnel(ssh_conn_params=ssh_conn_params)
+    tunnel = establish_ssh_tunnel(ssh_conn_params=ssh_params)
     tunnel.daemon_transport = True
     tunnel.daemon_forward_servers = True
     tunnel.start()
-    db_conn_params["port"] = int(tunnel.local_bind_port)
+    db_params["port"] = int(tunnel.local_bind_port)
 
-    equities_list = get_all_equities_list(
-        logger=conns.logger, db_conn_params=db_conn_params
-    )
+    equities_list = get_all_equities_list(logger=conns.logger, db_conn_params=db_params)
 
     conns.logger.info(msg="Starting thread pool...")
     pool = ThreadPool(num_threads=8)
@@ -468,10 +469,10 @@ if __name__ == "__main__":
             func=download_and_push_into_db,
             logger=conns.logger,
             disable_logging=False,
-            rest_client=rest_client,
+            rest_client=r_client,
             redis_client=conns.redis_client,
             ticker=eq,
-            db_conn_params=db_conn_params,
+            db_conn_params=db_params,
             timespan="day",
             from_=datetime.date.today() - datetime.timedelta(days=2),
         )
