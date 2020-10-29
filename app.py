@@ -129,8 +129,14 @@ app.layout = dbc.Container(
                                     dcc.Dropdown(
                                         id="transformations-options",
                                         options=[
-                                            {"label": "day-on-day returns", "value": "day_on_day_returns"},
-                                            {"label": "day-to-first returns", "value": "day_to_first_returns"}
+                                            {
+                                                "label": "day-on-day returns",
+                                                "value": "day_on_day_returns",
+                                            },
+                                            {
+                                                "label": "day-to-first returns",
+                                                "value": "day_to_first_returns",
+                                            },
                                         ],
                                         multi=True,
                                     ),
@@ -157,11 +163,15 @@ def b_bands(price: pd.Series, window_size: int = 10, num_of_std: int = 5):
 
 
 def cal_returns(price: pd.Series, day_on_day: bool = True, day_to_first: bool = False):
+    res = None
+
     if day_on_day:
-        return np.log(price).diff()
+        res = np.log(price).diff()
 
     if day_to_first:
-        return np.log(price) - np.log(price.iloc[0])
+        res = np.log(price) - np.log(price.iloc[0])
+
+    return res
 
 
 @cache.memoize()
