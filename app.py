@@ -2,6 +2,7 @@ import dash
 import dash_core_components as dcc
 import dash_html_components as html
 import dash_bootstrap_components as dbc
+import plotly.graph_objs as go
 
 from connections import Connections
 from flask_caching import Cache
@@ -31,11 +32,10 @@ equities_list = get_equities_list(
 
 # Bootstrap has some nice additions
 external_stylesheets = [
-    "https://codepen.io/chriddyp/pen/bWLwgP.css",
     dbc.themes.BOOTSTRAP,
 ]
 
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets,)
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 # establish cache
 CACHE_CONFIG = {
@@ -47,28 +47,121 @@ CACHE_CONFIG = {
 cache = Cache(app=app.server, config=CACHE_CONFIG)
 
 
-app.layout = html.Div(
+app.layout = dbc.Container(
     [
-        html.Div([html.H2("Explorer",),]),
-        dcc.Dropdown(
-            id="stock-ticker-input",
-            options=[{"label": s, "value": s} for s in equities_list],
-            value=["AAPL", "TSLA"],
-            multi=True,
+        html.Div([html.H2("Explorer", style={"padding": "1em"})]),
+        html.Div(
+            [
+                dcc.Dropdown(
+                    id="stock-ticker-input",
+                    options=[{"label": s, "value": s} for s in equities_list],
+                    value=["AAPL", "TSLA"],
+                    multi=True,
+                ),
+            ],
+            style={"padding": "1em"},
         ),
-        html.Div(id="graphs"),
-        html.Div(id="signal", hidden=True),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        [
+                            html.H5(
+                                "Graph Type",
+                                className="card-title",
+                                style={"padding": "1em"},
+                            ),
+                            dbc.CardBody(
+                                [
+                                    dcc.Dropdown(
+                                        id="graph-type-options",
+                                        options=[
+                                            {
+                                                "label": "CandleStick",
+                                                "value": "CandleStick",
+                                            },
+                                            {
+                                                "label": "Close Only",
+                                                "value": "Close Only",
+                                            },
+                                        ],
+                                        multi=False,
+                                    ),
+                                ]
+                            ),
+                        ],
+                    ),
+                    width=4,
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        [
+                            html.H5(
+                                "Technical Indicators",
+                                className="card-title",
+                                style={"padding": "1em"},
+                            ),
+                            dbc.CardBody(
+                                [
+                                    dcc.Dropdown(
+                                        id="technical-indicators-options",
+                                        options=[
+                                            {"label": "BBands", "value": "BBands"}
+                                        ],
+                                        multi=True,
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                    width=4,
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        [
+                            html.H5(
+                                "Transformations",
+                                className="card-title",
+                                style={"padding": "1em"},
+                            ),
+                            dbc.CardBody(
+                                [
+                                    dcc.Dropdown(
+                                        id="transformations-options",
+                                        options=[
+                                            {"label": "day-on-day returns", "value": "day_on_day_returns"},
+                                            {"label": "day-to-first returns", "value": "day_to_first_returns"}
+                                        ],
+                                        multi=True,
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                    width=4,
+                ),
+            ]
+        ),
+        html.Div(id="graphs", style={"padding": "1em"}),
     ],
     className="container",
 )
 
 
-def b_bands(price, window_size=10, num_of_std=5):
+def b_bands(price: pd.Series, window_size: int = 10, num_of_std: int = 5):
     rolling_mean = price.rolling(window=window_size).mean()
     rolling_std = price.rolling(window=window_size).std()
     upper_band = rolling_mean + (rolling_std * num_of_std)
     lower_band = rolling_mean - (rolling_std * num_of_std)
     return rolling_mean, upper_band, lower_band
+
+
+def cal_returns(price: pd.Series, day_on_day: bool = True, day_to_first: bool = False):
+    if day_on_day:
+        return np.log(price).diff()
+
+    if day_to_first:
+        return np.log(price) - np.log(price.iloc[0])
 
 
 @cache.memoize()
@@ -141,12 +234,28 @@ color_scale = cl.scales["9"]["qual"]["Paired"]
 
 @app.callback(
     dash.dependencies.Output("graphs", "children"),
-    [dash.dependencies.Input("stock-ticker-input", "value"),],
+    [
+        dash.dependencies.Input("stock-ticker-input", "value"),
+        dash.dependencies.Input("graph-type-options", "value"),
+        dash.dependencies.Input("technical-indicators-options", "value"),
+        dash.dependencies.Input("transformations-options", "value"),
+    ],
 )
-def update_graph(tickers):
+def update_graph(
+    tickers, graph_type_options, tech_indi_options, transformations_options
+):
+
+    if graph_type_options is None:
+        graph_type_options = ["Close Only"]
+
+    if tech_indi_options is None:
+        tech_indi_options = []
+
+    if transformations_options is None:
+        transformations_options = []
 
     fmt = "%Y-%m-%d"
-    start = (datetime.date.today() - datetime.timedelta(days=365)).strftime(fmt)
+    start = (datetime.date.today() - datetime.timedelta(days=800)).strftime(fmt)
     end = datetime.date.today().strftime(fmt)
     conns.logger.info("Trying to get price...")
     df = get_price(
@@ -168,10 +277,13 @@ def update_graph(tickers):
             )
         )
     else:
+        all_traces = []
         for i, ticker in enumerate(tickers):
 
             dff = df[df["ticker"] == ticker]
 
+            # different types of output for the graph, that can be toggled with the
+            # radio buttons
             candlestick = {
                 "x": dff.index,
                 "open": dff["open"],
@@ -184,36 +296,99 @@ def update_graph(tickers):
                 "increasing": {"line": {"color": color_scale[0]}},
                 "decreasing": {"line": {"color": color_scale[1]}},
             }
+            candlestick_scatter = go.Candlestick(**candlestick)
+
+            close_only = {
+                "x": dff.index,
+                "y": dff["close"],
+                "mode": "lines",
+                "line": {"width": 3, "color": color_scale[(i * 2) % len(color_scale)],},
+                "name": ticker,
+                "legendgroup": ticker,
+            }
+            close_only_scatter = go.Scatter(**close_only)
+
+            # always compute bollinger bands, and make bollinger traces along with that
             bb_bands = b_bands(dff.close)
-            bollinger_traces = [
-                {
-                    "x": dff.index,
-                    "y": y,
-                    "type": "scatter",
-                    "mode": "lines",
-                    "line": {
-                        "width": 1,
-                        "color": color_scale[(i * 2) % len(color_scale)],
-                    },
-                    "hoverinfo": "none",
-                    "legendgroup": ticker,
-                    "showlegend": True if i == 0 else False,
-                    "name": "{} - bollinger bands".format(ticker),
-                }
+            bollinger_scatters = [
+                go.Scatter(
+                    **{
+                        "x": dff.index,
+                        "y": y,
+                        "mode": "lines",
+                        "line": {
+                            "width": 1,
+                            "color": color_scale[(i * 2) % len(color_scale)],
+                        },
+                        "hoverinfo": "none",
+                        "legendgroup": ticker,
+                        "showlegend": True if i == 0 else False,
+                        "name": f"{ticker} - bollinger bands",
+                    }
+                )
                 for i, y in enumerate(bb_bands)
             ]
-            graphs.append(
-                dcc.Graph(
-                    id=ticker,
-                    figure={
-                        "data": [candlestick] + bollinger_traces,
-                        "layout": {
-                            "margin": {"b": 0, "r": 10, "l": 60, "t": 0},
-                            "legend": {"x": 0},
-                        },
+
+            if "CandleStick" in graph_type_options:
+                traces = [candlestick_scatter]
+                if "BBands" in tech_indi_options:
+                    traces = [candlestick_scatter] + bollinger_scatters
+
+            elif "Close Only" in graph_type_options:
+                traces = [close_only_scatter]
+                if "BBands" in tech_indi_options:
+                    traces = [close_only_scatter] + bollinger_scatters
+
+            else:
+                traces = [candlestick_scatter]
+                if "BBands" in tech_indi_options:
+                    traces = [candlestick_scatter] + bollinger_scatters
+
+            all_traces += traces
+
+        fig = {
+            "data": all_traces,
+            "layout": {
+                "margin": {"b": 0, "r": 10, "l": 60, "t": 0},
+                "legend": {"x": 1},
+                "xaxis": {
+                    "rangeselector": {
+                        "buttons": [
+                            {
+                                "count": 1,
+                                "label": "1m",
+                                "step": "month",
+                                "stepmode": "backward",
+                            },
+                            {
+                                "count": 3,
+                                "label": "3m",
+                                "step": "month",
+                                "stepmode": "backward",
+                            },
+                            {
+                                "count": 6,
+                                "label": "6m",
+                                "step": "month",
+                                "stepmode": "backward",
+                            },
+                            {
+                                "count": 1,
+                                "label": "YTD",
+                                "step": "month",
+                                "stepmode": "todate",
+                            },
+                            {"step": "all"},
+                        ]
                     },
-                )
-            )
+                    "rangeslider": {"visible": True},
+                },
+            },
+        }
+
+        graphs = [
+            dcc.Graph(id="Plot", figure=fig),
+        ]
 
     return graphs
 
