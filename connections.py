@@ -1,16 +1,14 @@
-import configparser
-import psycopg2
-
-# import asyncpg
-import aiopg
-from sqlalchemy import create_engine
 from polygon import WebSocketClient, STOCKS_CLUSTER, RESTClient
+from sqlalchemy import create_engine
+from sshtunnel import SSHTunnelForwarder
 from logger import StreamsLogger
-import redis
-
+import configparser
 import paramiko
 import sshtunnel
-from sshtunnel import SSHTunnelForwarder
+import psycopg2
+import aiopg
+import redis
+import os
 
 sshtunnel.SSH_TIMEOUT = 10.0
 sshtunnel.TUNNEL_TIMEOUT = 10.0
@@ -22,11 +20,9 @@ class Connections(StreamsLogger):
         # read the damn file
         super().__init__()
         config = configparser.ConfigParser()
-        config.read("config.ini")
+        config.read(os.path.join(os.curdir, "config.ini"))
 
-        self.my_private_key_path = (
-            "C:\\Users\\SHIRAM\\Documents\\streams\\ssl_certs\\new_ts_pair.pem"
-        )
+        self.my_private_key_path = os.path.join(os.curdir, "ssl_certs", "new_ts_pair.pem")
         self.my_private_key = paramiko.RSAKey.from_private_key_file(
             self.my_private_key_path
         )
@@ -39,7 +35,6 @@ class Connections(StreamsLogger):
             "port": int(config["DB"]["port"]),
             "user": config["DB"]["user"],
             "database": config["DB"]["name"],
-            # "options": "-c statement_timeout=0",
             "keepalives": 1,
             "keepalives_idle": 5,
             "keepalives_interval": 2,
