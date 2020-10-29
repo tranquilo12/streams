@@ -517,6 +517,17 @@ Flask = "*"
 
 [[package]]
 category = "main"
+description = "Adds caching support to your Flask application"
+name = "flask-caching"
+optional = false
+python-versions = "*"
+version = "1.9.0"
+
+[package.dependencies]
+Flask = "*"
+
+[[package]]
+category = "main"
 description = "Compress responses in your Flask app with gzip, deflate or brotli."
 name = "flask-compress"
 optional = false
@@ -2029,7 +2040,7 @@ test = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 
 [metadata]
-content-hash = "22934826d3ccb104691553d718136d54b00de5a60a58d2a61ea8d5903c0bae6c"
+content-hash = "d01877e4b2427b76f735878abe2ee4ca452b645f5a6cfd4ddfd6d2c7d236e110"
 lock-version = "1.0"
 python-versions = "^3.6.1"
 
@@ -2343,6 +2354,10 @@ flask-cache = [
     {file = "Flask-Cache-0.13.1.tar.gz", hash = "sha256:90126ca9bc063854ef8ee276e95d38b2b4ec8e45fd77d5751d37971ee27c7ef4"},
     {file = "Flask_Cache-0.13.1-py2.7.egg", hash = "sha256:33187b3ddceeee233fe3db68ffcc118b5498e8ad28edde711bcbdcbf4924ce35"},
     {file = "Flask_Cache-0.13.1-py3.3.egg", hash = "sha256:ae9d1ac4549517dfbc1f178ccc5429f61f836be3cc109a0b2481c98b3711c329"},
+]
+flask-caching = [
+    {file = "Flask-Caching-1.9.0.tar.gz", hash = "sha256:a0356ad868b1d8ec2d0e675a6fe891c41303128f8904d5d79e180d8b3f952aff"},
+    {file = "Flask_Caching-1.9.0-py2.py3-none-any.whl", hash = "sha256:e6ef2e2af84e13c4fd32c1839c1943a42f11b6b0fbcfdd6bf46547ea5482dbfe"},
 ]
 flask-compress = [
     {file = "Flask-Compress-1.7.0.tar.gz", hash = "sha256:965e832684160871b5268f97879c5e85a88569cc6e3e353a7779215664eefdad"},

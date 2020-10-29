@@ -4,19 +4,21 @@ import dash_html_components as html
 import dash_bootstrap_components as dbc
 
 from connections import Connections
-from flask_cache import Cache
+from flask_caching import Cache
 
 from multi_thread_streams import get_equities_list
 from multi_thread_streams import establish_ssh_tunnel
 
 import plotly.express as px
+import psycopg2
 import colorlover as cl
 import pandas as pd
 import datetime
-import logger
+import logging
 import os
 
-# establish all these clients
+# establish all these clients here, as everything is non forced to be
+# non-object-oriented by dash.
 conns = Connections()
 conns.establish_rest_client()
 conns.establish_redis_connection()
@@ -27,54 +29,31 @@ equities_list = get_equities_list(
     logger=conns.logger,
 )
 
+# Bootstrap has some nice additions
 external_stylesheets = [
     "https://codepen.io/chriddyp/pen/bWLwgP.css",
     dbc.themes.BOOTSTRAP,
 ]
 
-app = dash.Dash(
-    __name__,
-    assets_url_path="https://cdn.plot.ly/plotly-finance-1.28.0.min.js",
-    external_stylesheets=external_stylesheets,
-)
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets,)
 
 # establish cache
 CACHE_CONFIG = {
     "CACHE_TYPE": "redis",
-    "CACHE_REDIS_URL": os.environ.get("REDIS_URL", "redis://localhost:6379"),
+    "CACHE_REDIS_URL": os.environ.get(
+        "REDIS_URL", f"redis://:{conns.redis_conn_params['password']}@localhost:6379"
+    ),
 }
-cache = Cache()
-cache.init_app(app=app.server, config=CACHE_CONFIG)
+cache = Cache(app=app.server, config=CACHE_CONFIG)
 
 
 app.layout = html.Div(
     [
-        html.Div(
-            [
-                html.H2(
-                    "Finance Explorer",
-                    style={
-                        "display": "inline",
-                        "float": "left",
-                        "font-size": "2.65em",
-                        "margin-left": "7px",
-                        "font-weight": "bolder",
-                        "font-family": "Product Sans",
-                        "color": "rgba(117, 117, 117, 0.95)",
-                        "margin-top": "20px",
-                        "margin-bottom": "0",
-                    },
-                ),
-                html.Img(
-                    src="https://s3-us-west-1.amazonaws.com/plotly-tutorials/logo/new-branding/dash-logo-by-plotly-stripe.png",
-                    style={"height": "100px", "float": "right"},
-                ),
-            ]
-        ),
+        html.Div([html.H2("Explorer",),]),
         dcc.Dropdown(
             id="stock-ticker-input",
             options=[{"label": s, "value": s} for s in equities_list],
-            value=["YHOO", "GOOGL"],
+            value=["AAPL", "TSLA"],
             multi=True,
         ),
         html.Div(id="graphs"),
@@ -100,7 +79,7 @@ def get_price(
     end_date: str,
     ssh_conn_params: dict,
     db_conn_params: dict,
-    logger: logger,
+    logger: logging.Logger,
 ) -> pd.DataFrame:
     """
     Just make through the tunnel
@@ -113,14 +92,14 @@ def get_price(
     :param logger:
     :return: just the dataframe
     """
-    tickers = ",".join(tickers)
-    query = f"""SELECT t.timestamp, t.open, t.high, t.low, t.close, t.vwap
-                FROM crypto.public.polygon_stocks_agg_candles t 
-                WHERE t.timestamp BETWEEN {start_date} AND {end_date} 
+    tickers = ",".join([f"'{tkr.strip()}'" for tkr in tickers])
+    query = f"""SELECT t.ticker, t.timestamp, t.open, t.high, t.low, t.close, t.vwap
+                FROM polygon_stocks_agg_candles t 
+                WHERE t.timestamp BETWEEN '{start_date}' AND '{end_date}' 
                     AND t.ticker in ({tickers}) AND t.timespan = '{timespan}'
                 ORDER BY t.timestamp;"""
 
-    t = establish_ssh_tunnel(ssh_conn_params=ssh_conn_params)
+    t = establish_ssh_tunnel(ssh_conn_params)
     t.daemon_transport = True
     t.daemon_forward_servers = True
     t.start()
@@ -140,39 +119,21 @@ def get_price(
         res = None
 
     if res is not None:
+        logger.info(msg="Trying to parse the res...")
         df = pd.DataFrame.from_records(
-            columns=["timestamp", "open", "high", "low", "close", "vwap"],
+            columns=["ticker", "timestamp", "open", "high", "low", "close", "vwap"],
             data=res,
             index="timestamp",
         )
     else:
+        logger.info(msg="Cannot parse res...")
         df = None
 
     if t.is_alive | t.is_active:
         t.stop()
 
+    logger.info(msg="Returning df...")
     return df
-
-
-@app.callback(
-    dash.dependencies.Output("signal", "children"),
-    [dash.dependencies.Input("stock-ticker-input", "value")],
-)
-def compute_global_df(tickers):
-    fmt = "%Y-%m-%d"
-    start = (datetime.date.today() - datetime.timedelta(days=365)).strftime(fmt)
-    end = datetime.date.today().strftime(fmt)
-    print("Trying to get price...")
-    get_price(
-        tickers=tickers,
-        timespan="day",
-        start_date=start,
-        end_date=end,
-        db_conn_params=conns.db_conn_params,
-        ssh_conn_params=conns.ssh_conn_params,
-        logger=conns.logger
-    )
-    return tickers
 
 
 color_scale = cl.scales["9"]["qual"]["Paired"]
@@ -180,11 +141,23 @@ color_scale = cl.scales["9"]["qual"]["Paired"]
 
 @app.callback(
     dash.dependencies.Output("graphs", "children"),
-    [
-        dash.dependencies.Input("stock-ticker-input", "value"),
-    ],
+    [dash.dependencies.Input("stock-ticker-input", "value"),],
 )
 def update_graph(tickers):
+
+    fmt = "%Y-%m-%d"
+    start = (datetime.date.today() - datetime.timedelta(days=365)).strftime(fmt)
+    end = datetime.date.today().strftime(fmt)
+    conns.logger.info("Trying to get price...")
+    df = get_price(
+        tickers,
+        "day",
+        start,
+        end,
+        conns.ssh_conn_params,
+        conns.db_conn_params,
+        conns.logger,
+    )
 
     graphs = []
 
@@ -200,7 +173,7 @@ def update_graph(tickers):
             dff = df[df["ticker"] == ticker]
 
             candlestick = {
-                "x": dff["timestamp"],
+                "x": dff.index,
                 "open": dff["open"],
                 "high": dff["high"],
                 "low": dff["low"],
@@ -208,19 +181,19 @@ def update_graph(tickers):
                 "type": "candlestick",
                 "name": ticker,
                 "legendgroup": ticker,
-                "increasing": {"line": {"color": colorscale[0]}},
-                "decreasing": {"line": {"color": colorscale[1]}},
+                "increasing": {"line": {"color": color_scale[0]}},
+                "decreasing": {"line": {"color": color_scale[1]}},
             }
-            bb_bands = bbands(dff.Close)
+            bb_bands = b_bands(dff.close)
             bollinger_traces = [
                 {
-                    "x": dff["timestamp"],
+                    "x": dff.index,
                     "y": y,
                     "type": "scatter",
                     "mode": "lines",
                     "line": {
                         "width": 1,
-                        "color": colorscale[(i * 2) % len(colorscale)],
+                        "color": color_scale[(i * 2) % len(color_scale)],
                     },
                     "hoverinfo": "none",
                     "legendgroup": ticker,

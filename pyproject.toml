@@ -34,6 +34,7 @@ colorlover = "^0.3.0"
 flask_cache = "^0.13.1"
 flask = "^1.1.2"
 werkzeug = "0.16.0"
+flask-caching = "^1.9.0"
 
 [tool.poetry.dev-dependencies]
 
