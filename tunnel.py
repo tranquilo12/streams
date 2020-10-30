@@ -97,7 +97,7 @@ for n in range(0, ((len(blob) - 1) // 64) + 1):
     out += blob[(n * 64) : (n * 64) + 64] + "\n"
 out += f"-----END {t} PRIVATE KEY-----\n"
 
-f = NamedTemporaryFile(delete=False)
+f = NamedTemporaryFile(delete=False, mode='w')
 key_file = f.name
 
 try:
