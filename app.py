@@ -22,7 +22,7 @@ import os
 # non-object-oriented by dash.
 conns = Connections()
 conns.establish_rest_client()
-conns.establish_redis_connection()
+# conns.establish_redis_connection()
 
 equities_list = get_equities_list(
     db_conn_params=conns.db_conn_params,
@@ -385,7 +385,7 @@ def update_graph(
                             {
                                 "count": 1,
                                 "label": "YTD",
-                                "step": "month",
+                                "step": "year",
                                 "stepmode": "todate",
                             },
                             {"step": "all"},
