@@ -94,7 +94,7 @@ f = NamedTemporaryFile(delete=False, mode='w')
 key_file = f.name
 
 try:
-    f.write(out)
+    f.write(key)
     f.close()
 
     args = [
