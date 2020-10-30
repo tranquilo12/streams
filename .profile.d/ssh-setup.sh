@@ -19,8 +19,8 @@ chmod 600 ${HOME}/.ssh/heroku_id_rsa
 
 # Start the SSH tunnel if not already running
 OPTIONS="StrictHostKeyChecking no"
-SSH_CMD="ssh -f -i ${HOME}/.ssh/heroku_id_rsa -N -L 5433:${EC2_REMOTE_HOST}:6432 ${EC2_TUNNEL_USER}@${EC2_TUNNEL_SITE} -o ${OPTIONS}"
-PID=`pgrep -f "${SSH_CMD}"`
+SSH_CMD="ssh -f -i ${HOME}/.ssh/heroku_id_rsa -N -L 5433:${EC2_REMOTE_HOST}:6432 ${EC2_TUNNEL_USER}@${EC2_TUNNEL_SITE}"
+PID=`pgrep -f "${SSH_CMD} -o "${OPTIONS}""`
 if [ $PID ] ; then
     echo $0: tunnel already running on ${PID}
 else
