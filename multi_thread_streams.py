@@ -433,13 +433,13 @@ def get_equities_list(
     t = establish_ssh_tunnel(ssh_conn_params=ssh_conn_params)
     t.daemon_transport = True
     t.daemon_forward_servers = True
-    t.start()
+    # t.start()
     db_conn_params["port"] = int(t.local_bind_port)
 
     res = get_all_equities_list(logger=logger, db_conn_params=db_conn_params)
 
-    if t.is_alive | t.is_active:
-        t.stop()
+    # if t.is_alive | t.is_active:
+    #     t.stop()
 
     return res
 

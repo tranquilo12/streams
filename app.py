@@ -205,7 +205,7 @@ def get_price(
     t = establish_ssh_tunnel(ssh_conn_params)
     t.daemon_transport = True
     t.daemon_forward_servers = True
-    t.start()
+    # t.start()
     db_conn_params["port"] = int(t.local_bind_port)
 
     logger.info(msg="Getting prices...")
@@ -232,8 +232,8 @@ def get_price(
         logger.info(msg="Cannot parse res...")
         df = None
 
-    if t.is_alive | t.is_active:
-        t.stop()
+    # if t.is_alive | t.is_active:
+    #     t.stop()
 
     logger.info(msg="Returning df...")
     return df
