@@ -36,6 +36,7 @@ external_stylesheets = [
 ]
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+server = app.server
 
 # establish cache
 CACHE_CONFIG = {
@@ -44,7 +45,7 @@ CACHE_CONFIG = {
         "REDIS_URL", f"redis://:{conns.redis_conn_params['password']}@localhost:6379"
     ),
 }
-cache = Cache(app=app.server, config=CACHE_CONFIG)
+cache = Cache(app=server, config=CACHE_CONFIG)
 
 
 app.layout = dbc.Container(
