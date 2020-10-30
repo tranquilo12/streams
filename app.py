@@ -206,7 +206,7 @@ def get_price(
     t.daemon_transport = True
     t.daemon_forward_servers = True
     # t.start()
-    db_conn_params["port"] = int(t.local_bind_port)
+    db_conn_params["port"] = 5433 #int(t.local_bind_port)
 
     logger.info(msg="Getting prices...")
     try:

@@ -434,7 +434,7 @@ def get_equities_list(
     t.daemon_transport = True
     t.daemon_forward_servers = True
     # t.start()
-    db_conn_params["port"] = int(t.local_bind_port)
+    db_conn_params["port"] = 5433 #int(t.local_bind_port)
 
     res = get_all_equities_list(logger=logger, db_conn_params=db_conn_params)
 
