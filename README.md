@@ -1,5 +1,6 @@
 # streams
 From multiple data sources to one dashboard.
+![Screenshot](https://github.com/tranquilo12/streams/blob/master/first-screenshot.png)
 
 ### Requirements
 If you're looking to help with this project, 
