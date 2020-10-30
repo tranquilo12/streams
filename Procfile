@@ -1,1 +1,1 @@
-web: python tunnel.py && python app.py
+web: python app.py
