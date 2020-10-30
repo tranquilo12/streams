@@ -8,7 +8,6 @@ authors = ["Tranquilo12 <shriram.sunder121091@gmail.com>"]
 python = "^3.6.1"
 psycopg2-binary = "^2.8.5"
 polygon-api-client = "^0.1.6"
-bokeh = "^2.1.1"
 prefect = "^0.12.3"
 numpy = "^1.19.0"
 pandas = "^1.0.5"
