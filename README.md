@@ -54,7 +54,7 @@ Arranged in descending order of importance, within each group.
     - [ ] View holiday markers
     - [ ] View earnings markers
     - [ ] Add ta-lib 
-        - [ ] Will have to build from source [TA-LIB] (https://github.com/mrjbq7/ta-lib), which may involve rebuilding 
+        - [ ] Will have to build from source [TA-LIB](https://github.com/mrjbq7/ta-lib), which may involve rebuilding 
            the entire app into a docker instance to have more control over the stack.
 
 - [ ] Implement tabs [using this](https://dash-bootstrap-components.opensource.faculty.ai/examples/graphs-in-tabs/)
