@@ -2,11 +2,12 @@
 From multiple data sources to one dashboard.
 
 ### Requirements
+If you're looking to help with this project, 
 
 - This project uses [Poetry](https://python-poetry.org/).
     - You'll need to install poetry and type `poetry update' in this directory to replicate this environment.
 
-- Install Redis, default config should do. 
+- Install Redis, default config should be enough. 
     - This project uses a local redis server as a cache for incoming data.
     - If you're using windows, redis in WSL is *strongly advised*.
     - Make sure the service is running.
@@ -42,28 +43,28 @@ will ask if the port is already in use.
     - Make postgres ingest data.
     - Query postgres.
 
-### Features (TODO)
+### TODO
 Arranged in descending order of importance, within each group.
 
-[] Create a new card that filters for industry.
+- [ ] Create a new card that filters for industry.
 
-[] Transformations
-    [] day-on-day returns 
-    [] day-to-first returns
-    [] View holiday markers
-    [] View earnings markers
-    [] Add ta-lib 
-        [] Will have to build from source [TA-LIB] (https://github.com/mrjbq7/ta-lib), which may involve rebuilding 
+- [ ] Transformations
+    - [ ] day-on-day returns 
+    - [ ] day-to-first returns
+    - [ ] View holiday markers
+    - [ ] View earnings markers
+    - [ ] Add ta-lib 
+        - [ ] Will have to build from source [TA-LIB] (https://github.com/mrjbq7/ta-lib), which may involve rebuilding 
            the entire app into a docker instance to have more control over the stack.
 
-[] Implement tabs [using this](https://dash-bootstrap-components.opensource.faculty.ai/examples/graphs-in-tabs/)
-    [] Tab 1 contains just an overview of what's been selected. 
-    [] Tab 2 can only be related to returns. 
-        [] Correlation between returns
-            [] Between 2 and N number of assets.
-        [] PACF, ACF.
-        [] Decomposition.
-        [] Wavelet analysis.
+- [ ] Implement tabs [using this](https://dash-bootstrap-components.opensource.faculty.ai/examples/graphs-in-tabs/)
+    - [ ] Tab 1 contains just an overview of what's been selected. 
+    - [ ] Tab 2 can only be related to returns. 
+    - [ ] Correlation between returns
+        - [ ] Between 2 and N number of assets.
+        - [ ] PACF, ACF.
+        - [ ] Decomposition.
+        - [ ] Wavelet analysis.
         
-[] Create login screen for each user.
-    [] Each user must be able to save/view their favourites.
+- [ ] Create login screen for each user.
+    - [ ] Each user must be able to save/view their favourites.
