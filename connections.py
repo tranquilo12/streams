@@ -123,8 +123,8 @@ class Connections(StreamsLogger):
             sys.exit(1)
 
         else:
-            redis_url = os.getenv("REDIS_URL")
-            self.redis_pool = redis.ConnectionPool(redis_url)
+            self.redis_pool = redis.ConnectionPool()
+            self.redis_pool = self.redis_pool.from_url(url=os.getenv("REDIS_URL"))
             self.redis_client = redis.StrictRedis(
                 connection_pool=self.redis_pool, charset="utf-8", decode_responses=True
             )
