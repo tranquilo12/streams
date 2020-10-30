@@ -25,7 +25,9 @@ class Connections(StreamsLogger):
         config = configparser.ConfigParser()
         config.read(os.path.join(os.curdir, "config.ini"))
 
-        self.my_private_key_path = os.path.join(os.curdir, "ssl_certs", "new_ts_pair.pem")
+        self.my_private_key_path = os.path.join(
+            os.curdir, "ssl_certs", "new_ts_pair.pem"
+        )
         self.my_private_key = paramiko.RSAKey.from_private_key_file(
             self.my_private_key_path
         )
@@ -116,9 +118,19 @@ class Connections(StreamsLogger):
             if ping:
                 pass
 
-        except redis.AuthenticationError as e:
+        except (redis.AuthenticationError, ConnectionRefusedError) as e:
             print(f"Error: {e}")
             sys.exit(1)
+
+        else:
+            redis_url = os.getenv("REDIS_URL")
+            self.redis_pool = redis.ConnectionPool(redis_url)
+            self.redis_client = redis.StrictRedis(
+                connection_pool=self.redis_pool, charset="utf-8", decode_responses=True
+            )
+            ping = self.redis_client.ping()
+            if ping:
+                pass
 
     def establish_ssh_tunnel(self) -> None:
         try:
