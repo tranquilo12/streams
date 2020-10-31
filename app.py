@@ -3,16 +3,8 @@ import dash_core_components as dcc
 import dash_html_components as html
 import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
-
 from connections import Connections
 from flask_caching import Cache
-
-from multi_thread_streams import (
-    get_multiple_distinct_col_values_from_equities_info,
-    get_distinct_col_values_from_equities_info,
-)
-from multi_thread_streams import establish_ssh_tunnel
-
 from typing import List, Union
 import plotly.express as px
 import psycopg2
@@ -21,6 +13,11 @@ import pandas as pd
 import datetime
 import logging
 import os
+from multi_thread_streams import (
+    get_multiple_distinct_col_values_from_equities_info,
+    get_distinct_col_values_from_equities_info,
+    establish_ssh_tunnel,
+)
 
 # establish all these clients here, as everything is non forced to be
 # non-object-oriented by dash.
@@ -302,8 +299,6 @@ def get_overview_plots(
     tickers: list,
     chart_type: list,
     technical_indicators: list,
-    sectors: list = None,
-    industries: list = None,
 ) -> List[Union[go.Scatter, go.Candlestick]]:
 
     all_traces = []
