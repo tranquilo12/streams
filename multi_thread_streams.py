@@ -396,12 +396,20 @@ def download_and_push_into_db(
             logger.info(msg=f"Ticker : {ticker} has returned None.")
 
 
-def get_all_equities_list(logger: logging.Logger, db_conn_params: dict) -> list:
-    # query the db for equities list
-
-    logger.info(msg="Making ssh tunnel to get equities list...")
+def get_distinct_col_values_from_equities_info(
+    col_name: str, logger: logging.Logger, db_conn_params: dict
+) -> list:
+    """
+    A template function for querying the "equities_info" table, it's in a function to make things
+    easier from a multi-threading point of view
+    :param col_name: the distinct values of this col
+    :param logger: a logger object
+    :param db_conn_params: database connection parameters
+    :return:
+    """
+    logger.info(msg="Making ssh tunnel to get sectors list...")
     try:
-        query = "SELECT DISTINCT t.symbol FROM public.equities_info t;"
+        query = f"SELECT DISTINCT t.{col_name} FROM public.equities_info t;"
         with psycopg2.connect(**db_conn_params) as e_conn:
             with e_conn.cursor() as cur:
                 logger.info(msg="Querying db...")
@@ -409,37 +417,45 @@ def get_all_equities_list(logger: logging.Logger, db_conn_params: dict) -> list:
                 logger.info(msg="Fetchall query...")
                 res = cur.fetchall()
 
-        res = [val[0].replace(" ", "") for val in res]
-        res = [val for val in res if ("^" not in val)]
-
     except psycopg2.OperationalError as e:
         logger.error(msg=f"Psycopg2 Op Error: {e}")
         res = None
 
+    res = [r[0] for r in res]
+
     return res
 
 
-def get_equities_list(
-    ssh_conn_params: dict, logger: logging.Logger, db_conn_params: dict
-) -> list:
+def get_multiple_distinct_col_values_from_equities_info(
+    ssh_conn_params: dict,
+    logger: logging.Logger,
+    db_conn_params: dict,
+    col_names: list,
+) -> dict:
     """
-    Just make a function for this
-    :param ssh_conn_params:
-    :param logger:
-    :param db_conn_params:
+    A wrapper function that asks multiple distinct column values from equities_info.
+    This wrapper just opens a ssh tunnel for all these queries.
+    :param ssh_conn_params: to establish the ssh_conn_params
+    :param logger: a logger object
+    :param db_conn_params: the db connection params
+    :param col_names: a list of all column names
     :return:
     """
+    res = {}
 
     t = establish_ssh_tunnel(ssh_conn_params=ssh_conn_params)
     t.daemon_transport = True
     t.daemon_forward_servers = True
-    # t.start()
-    db_conn_params["port"] = 5433 #int(t.local_bind_port)
+    t.start()
+    db_conn_params["port"] = 5433  # int(t.local_bind_port)
 
-    res = get_all_equities_list(logger=logger, db_conn_params=db_conn_params)
+    for col in col_names:
+        res[col] = get_distinct_col_values_from_equities_info(
+            col_name=col, logger=logger, db_conn_params=db_conn_params
+        )
 
-    # if t.is_alive | t.is_active:
-    #     t.stop()
+    if t.is_alive | t.is_active:
+        t.stop()
 
     return res
 
@@ -460,10 +476,13 @@ if __name__ == "__main__":
     tunnel.start()
     db_params["port"] = int(tunnel.local_bind_port)
 
-    equities_list = get_all_equities_list(logger=conns.logger, db_conn_params=db_params)
+    res = get_distinct_col_values_from_equities_info(
+        col_name="symbol", logger=conns.logger, db_conn_params=db_params
+    )
+    equities_list = [val[0] for val[0] in res if "^" not in val[0] or "." not in val[0]]
 
     conns.logger.info(msg="Starting thread pool...")
-    pool = ThreadPool(num_threads=8)
+    pool = ThreadPool(num_threads=12)
     for eq in tqdm(equities_list):
         pool.add_tasks(
             func=download_and_push_into_db,
@@ -473,7 +492,7 @@ if __name__ == "__main__":
             redis_client=conns.redis_client,
             ticker=eq,
             db_conn_params=db_params,
-            timespan="day",
+            timespan="minute",
             from_=datetime.date.today() - datetime.timedelta(days=2),
         )
 

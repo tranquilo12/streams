@@ -7,9 +7,10 @@ import plotly.graph_objs as go
 from connections import Connections
 from flask_caching import Cache
 
-from multi_thread_streams import get_equities_list
+from multi_thread_streams import get_multiple_distinct_col_values_from_equities_info
 from multi_thread_streams import establish_ssh_tunnel
 
+from typing import List, Union
 import plotly.express as px
 import psycopg2
 import colorlover as cl
@@ -24,10 +25,11 @@ conns = Connections()
 conns.establish_rest_client()
 # conns.establish_redis_connection()
 
-equities_list = get_equities_list(
-    db_conn_params=conns.db_conn_params,
+res = get_multiple_distinct_col_values_from_equities_info(
     ssh_conn_params=conns.ssh_conn_params,
+    db_conn_params=conns.db_conn_params,
     logger=conns.logger,
+    col_names=["symbol", "sector", "industry"],
 )
 
 # Bootstrap has some nice additions
@@ -48,110 +50,119 @@ CACHE_CONFIG = {
 cache = Cache(app=server, config=CACHE_CONFIG)
 
 
-app.layout = dbc.Container(
+def get_dropdown_card(
+    card_title: str,
+    dropdown_options: list,
+    value: list = [],
+    multi: bool = False,
+    hide_title: bool = False,
+) -> dbc.Card:
+    """
+    A low-level card generator, that can be inserted into any div
+    :param card_title: Will be displayed at the top left of card
+    :param dropdown_options: all options to be presented, as a list
+    :param hide_title: sometimes, you dont want the title to be displayed, but id is tied to title
+    :param multi: can be multi select ?
+    :param value: instantiated value
+    :return: dbc.Card object
+    """
+    card = dbc.Card(
+        [
+            html.H5(
+                card_title,
+                className="" if hide_title else "card-title",
+                style={
+                    "padding": "0.0em" if hide_title else "0.3em",
+                    "visibility": "hidden" if hide_title else "visible",
+                    "font-size": "orem" if hide_title else "1rem",
+                },
+            ),
+            dbc.CardBody(
+                [
+                    dcc.Dropdown(
+                        id="-".join(card_title.lower().split(" ") + ["options"]),
+                        options=[
+                            {
+                                "label": val,
+                                "value": val.replace("-", "_").replace(" ", "_"),
+                            }
+                            for val in dropdown_options
+                        ],
+                        value=value,
+                        multi=multi,
+                    ),
+                ]
+            ),
+        ],
+        style={"padding-bottom": "1em"},
+    )
+    return card
+
+
+equities_list = [val[0] for val in res["symbol"] if "^" not in val[0]]
+equities_list = [val for val in equities_list if "." not in val]
+choose_tickers_card = get_dropdown_card(
+    card_title="Tickers",
+    hide_title=False,
+    dropdown_options=equities_list,
+    multi=True,
+    value=["AAPL", "TSLA"],
+)
+
+choose_sectors_card = get_dropdown_card(
+    card_title="Sectors", hide_title=False, dropdown_options=res["sector"], multi=False,
+)
+
+choose_industry_card = get_dropdown_card(
+    card_title="Industry",
+    hide_title=False,
+    dropdown_options=res["industry"],
+    multi=False,
+)
+
+graph_options_card = get_dropdown_card(
+    card_title="Chart Type", dropdown_options=["Candlestick", "Close"], multi=False
+)
+
+technical_indi_card = get_dropdown_card(
+    card_title="Technical Indicators",
+    dropdown_options=["BBands", "SRSI", "RSI", "SUP-5", "RES-5"],
+    multi=True,
+)
+
+transformations_card = get_dropdown_card(
+    card_title="Transformations",
+    dropdown_options=[
+        "day-to-day returns",
+        "day-to-first returns",
+        "normalize",
+        "standardize",
+    ],
+    multi=False,
+)
+
+app.layout = html.Div(
     [
-        html.Div([html.H2("Explorer", style={"padding": "1em"})]),
-        html.Div(
+        html.Div([html.H2("streams", style={"padding": "0.5em"})]),
+        dbc.Row(
             [
-                dcc.Dropdown(
-                    id="stock-ticker-input",
-                    options=[{"label": s, "value": s} for s in equities_list],
-                    value=["AAPL", "TSLA"],
-                    multi=True,
-                ),
+                dbc.Col(choose_tickers_card, width=4),
+                dbc.Col(choose_industry_card, width=4),
+                dbc.Col(choose_sectors_card, width=4),
             ],
-            style={"padding": "1em"},
+            style={"padding": "0.5em"},
         ),
         dbc.Row(
             [
-                dbc.Col(
-                    dbc.Card(
-                        [
-                            html.H5(
-                                "Graph Type",
-                                className="card-title",
-                                style={"padding": "1em"},
-                            ),
-                            dbc.CardBody(
-                                [
-                                    dcc.Dropdown(
-                                        id="graph-type-options",
-                                        options=[
-                                            {
-                                                "label": "CandleStick",
-                                                "value": "CandleStick",
-                                            },
-                                            {
-                                                "label": "Close Only",
-                                                "value": "Close Only",
-                                            },
-                                        ],
-                                        multi=False,
-                                    ),
-                                ]
-                            ),
-                        ],
-                    ),
-                    width=4,
-                ),
-                dbc.Col(
-                    dbc.Card(
-                        [
-                            html.H5(
-                                "Technical Indicators",
-                                className="card-title",
-                                style={"padding": "1em"},
-                            ),
-                            dbc.CardBody(
-                                [
-                                    dcc.Dropdown(
-                                        id="technical-indicators-options",
-                                        options=[
-                                            {"label": "BBands", "value": "BBands"}
-                                        ],
-                                        multi=True,
-                                    ),
-                                ]
-                            ),
-                        ]
-                    ),
-                    width=4,
-                ),
-                dbc.Col(
-                    dbc.Card(
-                        [
-                            html.H5(
-                                "Transformations",
-                                className="card-title",
-                                style={"padding": "1em"},
-                            ),
-                            dbc.CardBody(
-                                [
-                                    dcc.Dropdown(
-                                        id="transformations-options",
-                                        options=[
-                                            {
-                                                "label": "day-on-day returns",
-                                                "value": "day_on_day_returns",
-                                            },
-                                            {
-                                                "label": "day-to-first returns",
-                                                "value": "day_to_first_returns",
-                                            },
-                                        ],
-                                        multi=True,
-                                    ),
-                                ]
-                            ),
-                        ]
-                    ),
-                    width=4,
-                ),
-            ]
+                dbc.Col(graph_options_card, width=4),
+                dbc.Col(technical_indi_card, width=4),
+                dbc.Col(transformations_card, width=4),
+            ],
+            style={"padding": "0.5em"},
         ),
         html.Div(id="graphs", style={"padding": "1em"}),
     ],
-    className="container",
+    className="container-fluid",
 )
 
 
@@ -206,8 +217,8 @@ def get_price(
     t = establish_ssh_tunnel(ssh_conn_params)
     t.daemon_transport = True
     t.daemon_forward_servers = True
-    # t.start()
-    db_conn_params["port"] = 5433 #int(t.local_bind_port)
+    t.start()
+    db_conn_params["port"] = 5433  # int(t.local_bind_port)
 
     logger.info(msg="Getting prices...")
     try:
@@ -233,8 +244,8 @@ def get_price(
         logger.info(msg="Cannot parse res...")
         df = None
 
-    # if t.is_alive | t.is_active:
-    #     t.stop()
+    if t.is_alive | t.is_active:
+        t.stop()
 
     logger.info(msg="Returning df...")
     return df
@@ -246,8 +257,8 @@ color_scale = cl.scales["9"]["qual"]["Paired"]
 @app.callback(
     dash.dependencies.Output("graphs", "children"),
     [
-        dash.dependencies.Input("stock-ticker-input", "value"),
-        dash.dependencies.Input("graph-type-options", "value"),
+        dash.dependencies.Input("tickers-options", "value"),
+        dash.dependencies.Input("chart-type-options", "value"),
         dash.dependencies.Input("technical-indicators-options", "value"),
         dash.dependencies.Input("transformations-options", "value"),
     ],
@@ -257,7 +268,7 @@ def update_graph(
 ):
 
     if graph_type_options is None:
-        graph_type_options = ["Close Only"]
+        graph_type_options = ["Close"]
 
     if tech_indi_options is None:
         tech_indi_options = []
@@ -340,12 +351,12 @@ def update_graph(
                 for i, y in enumerate(bb_bands)
             ]
 
-            if "CandleStick" in graph_type_options:
+            if "Candlestick" in graph_type_options:
                 traces = [candlestick_scatter]
                 if "BBands" in tech_indi_options:
                     traces = [candlestick_scatter] + bollinger_scatters
 
-            elif "Close Only" in graph_type_options:
+            elif "Close" in graph_type_options:
                 traces = [close_only_scatter]
                 if "BBands" in tech_indi_options:
                     traces = [close_only_scatter] + bollinger_scatters
@@ -405,4 +416,4 @@ def update_graph(
 
 
 if __name__ == "__main__":
-    app.run_server(debug=False)
+    app.run_server(debug=True)

@@ -124,7 +124,12 @@ class Connections(StreamsLogger):
 
         else:
             self.redis_pool = redis.ConnectionPool()
-            self.redis_pool = self.redis_pool.from_url(url=os.getenv("REDIS_URL"))
+            self.redis_pool = self.redis_pool.from_url(
+                url=os.environ.get(
+                    "REDIS_URL",
+                    f"redis://:{self.redis_conn_params['password']}@localhost:6379",
+                ),
+            )
             self.redis_client = redis.StrictRedis(
                 connection_pool=self.redis_pool, charset="utf-8", decode_responses=True
             )
