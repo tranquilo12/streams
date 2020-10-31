@@ -397,7 +397,11 @@ def download_and_push_into_db(
 
 
 def get_distinct_col_values_from_equities_info(
-    col_name: str, logger: logging.Logger, db_conn_params: dict
+    logger: logging.Logger,
+    col_name: str,
+    db_conn_params: dict,
+    filter_col: str = None,
+    filter_val: list = None,
 ) -> list:
     """
     A template function for querying the "equities_info" table, it's in a function to make things
@@ -405,11 +409,21 @@ def get_distinct_col_values_from_equities_info(
     :param col_name: the distinct values of this col
     :param logger: a logger object
     :param db_conn_params: database connection parameters
+    :param filter_col: the col which will be used to filter by
+    :param filter_val: the filter col val
     :return:
     """
     logger.info(msg="Making ssh tunnel to get sectors list...")
-    try:
+
+    if filter_col is not None and filter_val is not None:
+        # filter_val = [f"'{val}'" for val in filter_val]
+        # filter_val = ", ".join(filter_val)
+        filter_val = filter_val.replace("_", " ").replace("-", " ")
+        query = f"SELECT DISTINCT t.{col_name} FROM public.equities_info t WHERE t.{filter_col} = '{filter_val.strip()}';"
+    else:
         query = f"SELECT DISTINCT t.{col_name} FROM public.equities_info t;"
+
+    try:
         with psycopg2.connect(**db_conn_params) as e_conn:
             with e_conn.cursor() as cur:
                 logger.info(msg="Querying db...")
@@ -427,10 +441,12 @@ def get_distinct_col_values_from_equities_info(
 
 
 def get_multiple_distinct_col_values_from_equities_info(
-    ssh_conn_params: dict,
     logger: logging.Logger,
+    ssh_conn_params: dict,
     db_conn_params: dict,
     col_names: list,
+    filter_col: str = None,
+    filter_val: list = None,
 ) -> dict:
     """
     A wrapper function that asks multiple distinct column values from equities_info.
@@ -439,6 +455,8 @@ def get_multiple_distinct_col_values_from_equities_info(
     :param logger: a logger object
     :param db_conn_params: the db connection params
     :param col_names: a list of all column names
+    :param filter_col: the col which will be used to filter by
+    :param filter_val: the filter col val
     :return:
     """
     res = {}
@@ -451,7 +469,11 @@ def get_multiple_distinct_col_values_from_equities_info(
 
     for col in col_names:
         res[col] = get_distinct_col_values_from_equities_info(
-            col_name=col, logger=logger, db_conn_params=db_conn_params
+            col_name=col,
+            logger=logger,
+            db_conn_params=db_conn_params,
+            filter_val=filter_val,
+            filter_col=filter_col,
         )
 
     if t.is_alive | t.is_active:

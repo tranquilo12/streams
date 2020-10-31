@@ -7,7 +7,10 @@ import plotly.graph_objs as go
 from connections import Connections
 from flask_caching import Cache
 
-from multi_thread_streams import get_multiple_distinct_col_values_from_equities_info
+from multi_thread_streams import (
+    get_multiple_distinct_col_values_from_equities_info,
+    get_distinct_col_values_from_equities_info,
+)
 from multi_thread_streams import establish_ssh_tunnel
 
 from typing import List, Union
@@ -23,7 +26,6 @@ import os
 # non-object-oriented by dash.
 conns = Connections()
 conns.establish_rest_client()
-# conns.establish_redis_connection()
 
 res = get_multiple_distinct_col_values_from_equities_info(
     ssh_conn_params=conns.ssh_conn_params,
@@ -53,7 +55,7 @@ cache = Cache(app=server, config=CACHE_CONFIG)
 def get_dropdown_card(
     card_title: str,
     dropdown_options: list,
-    value: list = [],
+    value: list = None,
     multi: bool = False,
     hide_title: bool = False,
 ) -> dbc.Card:
@@ -74,7 +76,10 @@ def get_dropdown_card(
                 style={
                     "padding": "0.0em" if hide_title else "0.3em",
                     "visibility": "hidden" if hide_title else "visible",
-                    "font-size": "orem" if hide_title else "1rem",
+                    "font-size": "0rem" if hide_title else "1rem",
+                    "font-weight": "0rem" if hide_title else "1rem",
+                    "padding-left": "0.0" if hide_title else "1.0em",
+                    "margin-top": "0.0" if hide_title else "1.0em",
                 },
             ),
             dbc.CardBody(
@@ -99,7 +104,7 @@ def get_dropdown_card(
     return card
 
 
-equities_list = [val[0] for val in res["symbol"] if "^" not in val[0]]
+equities_list = [val for val in res["symbol"] if "^" not in val]
 equities_list = [val for val in equities_list if "." not in val]
 choose_tickers_card = get_dropdown_card(
     card_title="Tickers",
@@ -120,8 +125,11 @@ choose_industry_card = get_dropdown_card(
     multi=False,
 )
 
-graph_options_card = get_dropdown_card(
-    card_title="Chart Type", dropdown_options=["Candlestick", "Close"], multi=False
+chart_options_card = get_dropdown_card(
+    card_title="Chart Type",
+    dropdown_options=["Candlestick", "Close"],
+    multi=False,
+    value=["Close"],
 )
 
 technical_indi_card = get_dropdown_card(
@@ -143,24 +151,50 @@ transformations_card = get_dropdown_card(
 
 app.layout = html.Div(
     [
-        html.Div([html.H2("streams", style={"padding": "0.5em"})]),
-        dbc.Row(
+        html.Div([html.H2("Streams", style={"padding": "0.1em"})]),
+        dbc.Tabs(
             [
-                dbc.Col(choose_tickers_card, width=4),
-                dbc.Col(choose_industry_card, width=4),
-                dbc.Col(choose_sectors_card, width=4),
+                dbc.Tab(
+                    label="Overview",
+                    tab_id="overview",
+                    children=[
+                        html.Div(
+                            [
+                                dbc.Row(
+                                    [
+                                        dbc.Col(choose_tickers_card, width=3),
+                                        dbc.Col(choose_sectors_card, width=3),
+                                        dbc.Col(choose_industry_card, width=3),
+                                        dbc.Col(chart_options_card, width=3),
+                                    ]
+                                ),
+                            ]
+                        ),
+                    ],
+                    style={"padding": "2em"},
+                ),
+                dbc.Tab(
+                    label="Technical Analysis",
+                    tab_id="t-analysis",
+                    children=[
+                        html.Div([dbc.Row([dbc.Col(technical_indi_card, width=12)])])
+                    ],
+                    style={"padding": "2em"},
+                ),
+                dbc.Tab(
+                    label="Projections",
+                    tab_id="projections",
+                    children=[
+                        html.Div([dbc.Row([dbc.Col(transformations_card, width=12)])])
+                    ],
+                    style={"padding": "2em"},
+                ),
             ],
-            style={"padding": "0.5em"},
+            id="tabs",
+            active_tab="overview",
+            style={"border": "white", "primary": "gold", "background": "cornsilk"},
         ),
-        dbc.Row(
-            [
-                dbc.Col(graph_options_card, width=4),
-                dbc.Col(technical_indi_card, width=4),
-                dbc.Col(transformations_card, width=4),
-            ],
-            style={"padding": "0.5em"},
-        ),
-        html.Div(id="graphs", style={"padding": "1em"}),
+        html.Div(id="tab-content", className="p-4", style={"padding": "1em"}),
     ],
     className="container-fluid",
 )
@@ -184,6 +218,135 @@ def cal_returns(price: pd.Series, day_on_day: bool = True, day_to_first: bool = 
         res = np.log(price) - np.log(price.iloc[0])
 
     return res
+
+
+def get_candlestick_from_df(
+    df: pd.DataFrame, ticker: str, color_scale: list
+) -> go.Candlestick:
+    """
+    For each ticker, build a candlestick plot
+    Args:
+        ticker: ticker symbol
+        df: the df that contains details for that ticker
+        color_scale: determines the color of the chart
+
+    Returns:
+        A go.Candlestick object
+    """
+
+    candlestick = {
+        "x": df.index,
+        "open": df["open"],
+        "high": df["high"],
+        "low": df["low"],
+        "close": df["close"],
+        "type": "candlestick",
+        "name": ticker,
+        "legendgroup": ticker,
+        "increasing": {"line": {"color": color_scale[0]}},
+        "decreasing": {"line": {"color": color_scale[1]}},
+    }
+    return go.Candlestick(**candlestick)
+
+
+def get_scatter_from_df(df: pd.DataFrame, ticker: str, color_scale: str) -> go.Scatter:
+    """
+
+    Args:
+        ticker: ticker symbol
+        df: the df that contains details for that ticker
+        color_scale: determines the color of the chart
+
+    Returns:
+        A go.Scatter object
+    """
+
+    close = {
+        "x": df.index,
+        "y": df["close"],
+        "mode": "lines",
+        "line": {"width": 3, "color": color_scale},
+        "name": ticker,
+        "legendgroup": ticker,
+    }
+    return go.Scatter(**close)
+
+
+def get_ta_from_df(
+    df: pd.DataFrame, ticker: str, indicator: str, color_scale: str
+) -> List[Union[go.Scatter, go.Candlestick]]:
+    if indicator == "BBands":
+        bb_bands = b_bands(df.close)
+        res = [
+            go.Scatter(
+                **{
+                    "x": df.index,
+                    "y": y,
+                    "mode": "lines",
+                    "line": {"width": 1, "color": color_scale,},
+                    "hoverinfo": "none",
+                    "legendgroup": ticker,
+                    "showlegend": True if i == 0 else False,
+                    "name": f"{ticker} - bollinger bands",
+                }
+            )
+            for i, y in enumerate(bb_bands)
+        ]
+    else:
+        res = []
+    return res
+
+
+def get_overview_plots(
+    df: pd.DataFrame,
+    tickers: list,
+    chart_type: list,
+    technical_indicators: list,
+    sectors: list = None,
+    industries: list = None,
+) -> List[Union[go.Scatter, go.Candlestick]]:
+
+    all_traces = []
+    color_scale = cl.scales["9"]["qual"]["Paired"]
+
+    # # decide if tickers or sectors + industries is going to be used here
+    if technical_indicators is None:
+        technical_indicators = []
+
+    for i, ticker in enumerate(tickers):
+
+        dff = df[df["ticker"] == ticker]
+        close_color_scale = color_scale[(i * 2) % len(color_scale)]
+
+        candlestick_plots = get_candlestick_from_df(
+            df=dff, ticker=ticker, color_scale=[color_scale[0], color_scale[1]]
+        )
+        close_plots = get_scatter_from_df(
+            df=dff, ticker=ticker, color_scale=close_color_scale
+        )
+        bbands_plots = get_ta_from_df(
+            df=dff, indicator="BBands", ticker=ticker, color_scale=close_color_scale
+        )
+
+        # always compute bollinger bands, and make bollinger traces along with that
+        if "Candlestick" in chart_type:
+            traces = [candlestick_plots]
+            if "BBands" in technical_indicators:
+                traces = [candlestick_plots] + bbands_plots
+
+        elif "Close" in chart_type:
+            traces = [close_plots]
+            if "BBands" in technical_indicators:
+                traces = [close_plots] + bbands_plots
+
+        else:
+            traces = [candlestick_plots]
+            if "BBands" in technical_indicators:
+                traces = [candlestick_plots] + bbands_plots
+
+        all_traces += traces
+
+    return all_traces
 
 
 @cache.memoize()
@@ -251,125 +414,108 @@ def get_price(
     return df
 
 
-color_scale = cl.scales["9"]["qual"]["Paired"]
-
-
 @app.callback(
-    dash.dependencies.Output("graphs", "children"),
+    dash.dependencies.Output("tab-content", "children"),
     [
+        dash.dependencies.Input("tabs", "active_tab"),
         dash.dependencies.Input("tickers-options", "value"),
+        dash.dependencies.Input("industry-options", "value"),
+        dash.dependencies.Input("sectors-options", "value"),
         dash.dependencies.Input("chart-type-options", "value"),
         dash.dependencies.Input("technical-indicators-options", "value"),
         dash.dependencies.Input("transformations-options", "value"),
     ],
 )
-def update_graph(
-    tickers, graph_type_options, tech_indi_options, transformations_options
-):
+def render_tab_content(
+    active_tab: str = "overview",
+    tickers: list = None,
+    industries: list = None,
+    sectors: list = None,
+    chart_type: list = ["Close"],
+    technical_indicators: list = ["BBands"],
+    transformations: list = ["day-to-day returns"],
+) -> list:
+    """
+    Renders interactively, tab content, based on the "active_tab" value.
+    Args:
+        active_tab: the value that determines which to be active
+        tickers: all tickers that can be individually moved around
+        industries: all industries (tab 1)
+        sectors: all sectors (tab 1)
+        chart_type: both Candlestick and Close (tab 1)
+        technical_indicators: all TA-Lib indicators (tab 2)
+        transformations: all the scale and linear transformations (tab 2)
 
-    if graph_type_options is None:
-        graph_type_options = ["Close"]
+    Returns:
+        a tab-content div
+    """
+    if sectors is not None:
+        sectors_tickers = get_multiple_distinct_col_values_from_equities_info(
+            col_names=["symbol"],
+            logger=conns.logger,
+            ssh_conn_params=conns.ssh_conn_params,
+            db_conn_params=conns.db_conn_params,
+            filter_col="sector",
+            filter_val=sectors,
+        )
+    else:
+        sectors_tickers = {"symbol": []}
 
-    if tech_indi_options is None:
-        tech_indi_options = []
+    if industries is not None:
+        industries_tickers = get_multiple_distinct_col_values_from_equities_info(
+            col_names=["symbol"],
+            logger=conns.logger,
+            ssh_conn_params=conns.ssh_conn_params,
+            db_conn_params=conns.db_conn_params,
+            filter_col="industry",
+            filter_val=industries,
+        )
+        if len(sectors_tickers["symbol"]) > 0:
+            industries_tickers = list(
+                set(sectors_tickers).intersection(set(industries_tickers))
+            )
+        else:
+            pass
+    else:
+        industries_tickers = {"symbol": []}
 
-    if transformations_options is None:
-        transformations_options = []
+    if len(industries_tickers["symbol"]) > 0:
+        tickers += industries_tickers["symbol"]
+    else:
+        tickers += sectors_tickers["symbol"]
 
     fmt = "%Y-%m-%d"
-    start = (datetime.date.today() - datetime.timedelta(days=800)).strftime(fmt)
-    end = datetime.date.today().strftime(fmt)
     conns.logger.info("Trying to get price...")
     df = get_price(
-        tickers,
-        "day",
-        start,
-        end,
-        conns.ssh_conn_params,
-        conns.db_conn_params,
-        conns.logger,
+        tickers=tickers,
+        timespan="day",
+        start_date=(datetime.date.today() - datetime.timedelta(days=800)).strftime(fmt),
+        end_date=datetime.date.today().strftime(fmt),
+        ssh_conn_params=conns.ssh_conn_params,
+        db_conn_params=conns.db_conn_params,
+        logger=conns.logger,
     )
 
     graphs = []
 
-    if not tickers:
-        graphs.append(
+    if len(tickers) < 1:
+        graphs = [
             html.H3(
                 "Select a stock ticker.", style={"marginTop": 20, "marginBottom": 20}
             )
+        ]
+
+    if active_tab == "overview":
+        all_overview_traces = get_overview_plots(
+            df=df,
+            tickers=tickers,
+            chart_type=chart_type,
+            technical_indicators=technical_indicators,
+            # industries=industries,
+            # sectors=sectors,
         )
-    else:
-        all_traces = []
-        for i, ticker in enumerate(tickers):
-
-            dff = df[df["ticker"] == ticker]
-
-            # different types of output for the graph, that can be toggled with the
-            # radio buttons
-            candlestick = {
-                "x": dff.index,
-                "open": dff["open"],
-                "high": dff["high"],
-                "low": dff["low"],
-                "close": dff["close"],
-                "type": "candlestick",
-                "name": ticker,
-                "legendgroup": ticker,
-                "increasing": {"line": {"color": color_scale[0]}},
-                "decreasing": {"line": {"color": color_scale[1]}},
-            }
-            candlestick_scatter = go.Candlestick(**candlestick)
-
-            close_only = {
-                "x": dff.index,
-                "y": dff["close"],
-                "mode": "lines",
-                "line": {"width": 3, "color": color_scale[(i * 2) % len(color_scale)],},
-                "name": ticker,
-                "legendgroup": ticker,
-            }
-            close_only_scatter = go.Scatter(**close_only)
-
-            # always compute bollinger bands, and make bollinger traces along with that
-            bb_bands = b_bands(dff.close)
-            bollinger_scatters = [
-                go.Scatter(
-                    **{
-                        "x": dff.index,
-                        "y": y,
-                        "mode": "lines",
-                        "line": {
-                            "width": 1,
-                            "color": color_scale[(i * 2) % len(color_scale)],
-                        },
-                        "hoverinfo": "none",
-                        "legendgroup": ticker,
-                        "showlegend": True if i == 0 else False,
-                        "name": f"{ticker} - bollinger bands",
-                    }
-                )
-                for i, y in enumerate(bb_bands)
-            ]
-
-            if "Candlestick" in graph_type_options:
-                traces = [candlestick_scatter]
-                if "BBands" in tech_indi_options:
-                    traces = [candlestick_scatter] + bollinger_scatters
-
-            elif "Close" in graph_type_options:
-                traces = [close_only_scatter]
-                if "BBands" in tech_indi_options:
-                    traces = [close_only_scatter] + bollinger_scatters
-
-            else:
-                traces = [candlestick_scatter]
-                if "BBands" in tech_indi_options:
-                    traces = [candlestick_scatter] + bollinger_scatters
-
-            all_traces += traces
-
         fig = {
-            "data": all_traces,
+            "data": all_overview_traces,
             "layout": {
                 "margin": {"b": 0, "r": 10, "l": 60, "t": 0},
                 "legend": {"x": 1},
@@ -400,16 +546,25 @@ def update_graph(
                                 "step": "year",
                                 "stepmode": "todate",
                             },
-                            {"step": "all"},
+                            {"step": "all", "label": "All"},
                         ]
                     },
                     "rangeslider": {"visible": True},
                 },
             },
         }
-
         graphs = [
             dcc.Graph(id="Plot", figure=fig),
+        ]
+
+    if active_tab == "t-analysis":
+        graphs = [
+            html.H3("New Tab for Analysis", style={"marginTop": 20, "marginBottom": 20})
+        ]
+
+    if active_tab == "projections":
+        graphs = [
+            html.H3("New Tab for Analysis", style={"marginTop": 20, "marginBottom": 20})
         ]
 
     return graphs
