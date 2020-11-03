@@ -416,8 +416,6 @@ def get_distinct_col_values_from_equities_info(
     logger.info(msg="Making ssh tunnel to get sectors list...")
 
     if filter_col is not None and filter_val is not None:
-        # filter_val = [f"'{val}'" for val in filter_val]
-        # filter_val = ", ".join(filter_val)
         filter_val = filter_val.replace("_", " ").replace("-", " ")
         query = f"SELECT DISTINCT t.{col_name} FROM public.equities_info t WHERE t.{filter_col} = '{filter_val.strip()}';"
     else:
@@ -501,10 +499,10 @@ if __name__ == "__main__":
     res = get_distinct_col_values_from_equities_info(
         col_name="symbol", logger=conns.logger, db_conn_params=db_params
     )
-    equities_list = [val[0] for val[0] in res if "^" not in val[0] or "." not in val[0]]
+    equities_list = [val for val in res if "^" not in val or "." not in val]
 
     conns.logger.info(msg="Starting thread pool...")
-    pool = ThreadPool(num_threads=12)
+    pool = ThreadPool(num_threads=24)
     for eq in tqdm(equities_list):
         pool.add_tasks(
             func=download_and_push_into_db,
@@ -515,7 +513,7 @@ if __name__ == "__main__":
             ticker=eq,
             db_conn_params=db_params,
             timespan="minute",
-            from_=datetime.date.today() - datetime.timedelta(days=2),
+            from_=datetime.date.today() - datetime.timedelta(days=31),
         )
 
     conns.logger.info(msg="Waiting for pool tasks to complete...")

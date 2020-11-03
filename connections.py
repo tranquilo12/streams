@@ -22,15 +22,30 @@ class Connections(StreamsLogger):
 
         # read the damn file
         super().__init__()
-        config = configparser.ConfigParser()
-        config.read(os.path.join(os.curdir, "config.ini"))
 
-        self.my_private_key_path = os.path.join(
-            os.curdir, "ssl_certs", "new_ts_pair.pem"
-        )
-        self.my_private_key = paramiko.RSAKey.from_private_key_file(
-            self.my_private_key_path
-        )
+        try:
+            self.my_private_key_path = os.path.join(
+                os.curdir, "ssl_certs", "new_ts_pair.pem"
+            )
+            self.my_private_key = paramiko.RSAKey.from_private_key_file(
+                self.my_private_key_path
+            )
+            config_path = os.path.join(os.curdir, "config.ini")
+
+        except FileNotFoundError as e:
+            # most likely trying to execute from a notebook in curdir\\notebooks, so go back one step
+            go_back_one = os.path.normpath(os.getcwd() + os.sep + os.pardir)
+            self.my_private_key_path = os.path.join(
+                go_back_one, "ssl_certs", "new_ts_pair.pem"
+            )
+            self.my_private_key = paramiko.RSAKey.from_private_key_file(
+                self.my_private_key_path
+            )
+            config_path = os.path.join(go_back_one, "config.ini")
+
+        config = configparser.ConfigParser()
+        config.read(config_path)
+
         self.tunnel = None
 
         # for the other parameters
