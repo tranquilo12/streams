@@ -11,6 +11,7 @@ import sshtunnel
 import psycopg2
 import aiopg
 import redis
+import sys
 import os
 
 sshtunnel.SSH_TIMEOUT = 10.0

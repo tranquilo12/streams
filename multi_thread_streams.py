@@ -512,8 +512,8 @@ if __name__ == "__main__":
             redis_client=conns.redis_client,
             ticker=eq,
             db_conn_params=db_params,
-            timespan="minute",
-            from_=datetime.date.today() - datetime.timedelta(days=31),
+            timespan="day",
+            from_=datetime.date.today() - datetime.timedelta(days=10),
         )
 
     conns.logger.info(msg="Waiting for pool tasks to complete...")
