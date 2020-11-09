@@ -462,7 +462,7 @@ def get_multiple_distinct_col_values_from_equities_info(
     t = establish_ssh_tunnel(ssh_conn_params=ssh_conn_params)
     t.daemon_transport = True
     t.daemon_forward_servers = True
-    t.start()
+    # t.start()
     db_conn_params["port"] = 5433  # int(t.local_bind_port)
 
     for col in col_names:
@@ -474,8 +474,8 @@ def get_multiple_distinct_col_values_from_equities_info(
             filter_col=filter_col,
         )
 
-    if t.is_alive | t.is_active:
-        t.stop()
+    # if t.is_alive | t.is_active:
+    #     t.stop()
 
     return res
 
@@ -502,7 +502,7 @@ if __name__ == "__main__":
     equities_list = [val for val in res if "^" not in val or "." not in val]
 
     conns.logger.info(msg="Starting thread pool...")
-    pool = ThreadPool(num_threads=24)
+    pool = ThreadPool(num_threads=100)
     for eq in tqdm(equities_list):
         pool.add_tasks(
             func=download_and_push_into_db,
@@ -512,8 +512,8 @@ if __name__ == "__main__":
             redis_client=conns.redis_client,
             ticker=eq,
             db_conn_params=db_params,
-            timespan="day",
-            from_=datetime.date.today() - datetime.timedelta(days=10),
+            timespan="minute",
+            from_=datetime.date.today() - datetime.timedelta(days=2),
         )
 
     conns.logger.info(msg="Waiting for pool tasks to complete...")

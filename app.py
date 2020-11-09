@@ -40,11 +40,10 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
 
 # establish cache
+redis_pwd = conns.redis_conn_params['password']
 CACHE_CONFIG = {
     "CACHE_TYPE": "redis",
-    "CACHE_REDIS_URL": os.environ.get(
-        "REDIS_URL", f"redis://:{conns.redis_conn_params['password']}@localhost:6379"
-    ),
+    "CACHE_REDIS_URL": os.environ.get("REDIS_URL", f"redis://:{redis_pwd}@localhost:6379")
 }
 cache = Cache(app=server, config=CACHE_CONFIG)
 
@@ -375,7 +374,7 @@ def get_price(
     t = establish_ssh_tunnel(ssh_conn_params)
     t.daemon_transport = True
     t.daemon_forward_servers = True
-    t.start()
+    # t.start()
     db_conn_params["port"] = 5433  # int(t.local_bind_port)
 
     logger.info(msg="Getting prices...")
@@ -402,8 +401,8 @@ def get_price(
         logger.info(msg="Cannot parse res...")
         df = None
 
-    if t.is_alive | t.is_active:
-        t.stop()
+    # if t.is_alive | t.is_active:
+    #     t.stop()
 
     logger.info(msg="Returning df...")
     return df

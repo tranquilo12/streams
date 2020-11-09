@@ -6,7 +6,7 @@ import datetime
 class StreamsLogger:
     def __init__(self):
         self.logger = logging.getLogger(name=__name__)
-        self.logger.setLevel(level=logging.ERROR)
+        self.logger.setLevel(level=logging.INFO)
 
         # create a file handler that puts all these log messages to file
         today_str = datetime.date.today().strftime("%Y-%d-%m")
