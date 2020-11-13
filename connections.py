@@ -78,6 +78,13 @@ class Connections(StreamsLogger):
             "db": int(config["REDIS"]["db"]),
             "socket_timeout": int(config["REDIS"]["socket_timeout"]),
         }
+        self.redis_cache_config = {
+            "CACHE_TYPE": "redis",
+            "CACHE_REDIS_URL": os.environ.get(
+                "REDIS_URL",
+                f"redis://:{self.redis_conn_params['password']}@localhost:6379",
+            ),
+        }
         self.dsn = f"dbname={self.db_conn_params['database']} user={self.db_conn_params['user']} password={self.db_conn_params['password']} host={self.db_conn_params['host']}"
         self.api_key = config["POLYGON"]["reverent_visvesvaraya_key"]
         self.rds_connected = None

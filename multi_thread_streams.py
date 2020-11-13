@@ -502,7 +502,7 @@ if __name__ == "__main__":
     equities_list = [val for val in res if "^" not in val or "." not in val]
 
     conns.logger.info(msg="Starting thread pool...")
-    pool = ThreadPool(num_threads=100)
+    pool = ThreadPool(num_threads=50)
     for eq in tqdm(equities_list):
         pool.add_tasks(
             func=download_and_push_into_db,
