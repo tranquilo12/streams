@@ -4,21 +4,19 @@
 echo $0: creating public and private key files
 
 # Create the .ssh directory
-mkdir -p ${HOME}/.ssh
-chmod 700 ${HOME}/.ssh
+# mkdir -p ${HOME}/.ssh
+# chmod 700 ${HOME}/.ssh
 
 # Create the public and private key files from the environment variables.
-echo "${EC2_PUBLIC_KEY}" > ${HOME}/.ssh/heroku_id_rsa.pub
-chmod 644 ${HOME}/.ssh/heroku_id_rsa.pub
+source <(grep = '/mnt/c/Users/ShriramSunder/Projects/streams/config.ini')
+
+chmod 644 ${HOME}/.ssh/new_ts_pair_openssh.pub
 
 # Note use of double quotes, required to preserve newlines
-echo "${EC2_PRIVATE_KEY}" > ${HOME}/.ssh/heroku_id_rsa
-chmod 600 ${HOME}/.ssh/heroku_id_rsa
-
-# Preload the known_hosts file  (see "version 2" below)
+chmod 600 ${HOME}/.ssh/new_ts_pair_openssh
 
 # Start the SSH tunnel if not already running
-SSH_CMD="ssh -v -f -i ${HOME}/.ssh/heroku_id_rsa -N -L 5433:127.0.0.1:6432 ${EC2_TUNNEL_USER}@${EC2_TUNNEL_SITE} -o StrictHostKeyChecking=no"
+SSH_CMD="ssh -v -f -i ${HOME}/.ssh/new_ts_pair_openssh -N -L 5433:127.0.0.1:6432 ${ssh_user}@${ssh_host} -o StrictHostKeyChecking=no"
 PID=`pgrep -f "${SSH_CMD}"`
 if [ $PID ] ; then
     echo $0: tunnel already running on ${PID}
