@@ -62,13 +62,16 @@ class Connections(StreamsLogger):
             "keepalives_count": 100,
         }
         self.ssh_conn_params = {
-            "ssh_address_or_host": (config["SSH"]["host"]),
-            "ssh_username": config["SSH"]["user"],
+            "ssh_address_or_host": (config["SSH"]["ssh_host"]),
+            "ssh_username": config["SSH"]["ssh_user"],
             "ssh_pkey": self.my_private_key,
-            "remote_bind_address": (config["SSH"]["host"], int(config["DB"]["port"]),),
+            "remote_bind_address": (
+                config["SSH"]["ssh_host"],
+                int(config["DB"]["ssh_port"]),
+            ),
             "local_bind_address": (
-                config["SSH"]["local_bind_address"],
-                int(config["SSH"]["local_bind_port"]),
+                config["SSH"]["ssh_local_bind_address"],
+                int(config["SSH"]["ssh_local_bind_port"]),
             ),
         }
         self.redis_conn_params = {
@@ -191,7 +194,11 @@ class Connections(StreamsLogger):
             self.rds_conn = psycopg2.connect(**self.db_conn_params)
             self.rds_connected = True
             self.logger.info(msg="RDS Connection established")
-        except (ValueError, PermissionError, psycopg2.OperationalError,) as e:
+        except (
+            ValueError,
+            PermissionError,
+            psycopg2.OperationalError,
+        ) as e:
             self.logger.error(msg=f"RDS Connection not established, with error: {e}")
             self.rds_connected = False
 
